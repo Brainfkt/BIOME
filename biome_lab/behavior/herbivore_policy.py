@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable
 
 import numpy as np
 
@@ -32,14 +32,20 @@ class HerbivorePolicy:
                 target_id=getattr(threats[0], "id", None),
             )
 
-        plants: List[object] = list(visible_plants)
-        if herbivore.is_hungry() and plants:
-            target = min(plants, key=lambda plant: distance_squared(herbivore.position, getattr(plant, "position")))
-            return BehaviorDecision(
-                state=BehaviorState.SEEKING_FOOD,
-                desired_velocity=seek(herbivore.position, getattr(target, "position"), herbivore.traits.max_speed),
-                target_id=getattr(target, "id", None),
-            )
+        if herbivore.is_hungry():
+            target = None
+            target_distance_sq = float("inf")
+            for plant in visible_plants:
+                plant_distance_sq = distance_squared(herbivore.position, getattr(plant, "position"))
+                if plant_distance_sq < target_distance_sq:
+                    target = plant
+                    target_distance_sq = plant_distance_sq
+            if target is not None:
+                return BehaviorDecision(
+                    state=BehaviorState.SEEKING_FOOD,
+                    desired_velocity=seek(herbivore.position, getattr(target, "position"), herbivore.traits.max_speed),
+                    target_id=getattr(target, "id", None),
+                )
 
         if herbivore.can_reproduce():
             return BehaviorDecision(

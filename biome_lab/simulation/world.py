@@ -65,6 +65,13 @@ class World:
         self.plant_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
         self.herbivore_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
         self.predator_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
+        self._nearby_predators_buffer: List[object] = []
+        self._visible_predators_buffer: List[object] = []
+        self._nearby_plants_buffer: List[object] = []
+        self._visible_plants_buffer: List[object] = []
+        self._nearby_prey_buffer: List[object] = []
+        self._visible_prey_buffer: List[object] = []
+        self._nearby_creatures_buffer: List[Creature] = []
         self.reset()
 
     @property
@@ -84,6 +91,7 @@ class World:
         self.topology_grid = self._build_topology_grid()
         self.events = []
         self.last_spawn_error = None
+        self._clear_query_buffers()
         for _ in range(self.config.plant.initial_count):
             self.spawn_plant()
         for _ in range(self.config.initial_herbivores):
@@ -92,6 +100,15 @@ class World:
             self.spawn_creature("predator", initial=True)
         self.events.extend(self._seed_initial_infections())
         self._refresh_indices()
+
+    def _clear_query_buffers(self) -> None:
+        self._nearby_predators_buffer.clear()
+        self._visible_predators_buffer.clear()
+        self._nearby_plants_buffer.clear()
+        self._visible_plants_buffer.clear()
+        self._nearby_prey_buffer.clear()
+        self._visible_prey_buffer.clear()
+        self._nearby_creatures_buffer.clear()
 
     def next_id(self) -> int:
         self._id_counter += 1
@@ -707,13 +724,32 @@ class World:
     def _update_herbivore(self, herbivore: Herbivore, dt: float) -> List[SimulationEvent]:
         assert herbivore.traits is not None
         threat_range = min(herbivore.traits.vision_range, herbivore.traits.flee_distance)
-        predators = self.predator_index.query_radius(herbivore.position, threat_range)
-        visible_predators = self.perception.visible_entities(herbivore, predators)
+        predators = self.predator_index.query_radius_into(
+            herbivore.position,
+            threat_range,
+            self._nearby_predators_buffer,
+        )
+        visible_predators = self.perception.visible_entities_into(
+            herbivore,
+            predators,
+            self._visible_predators_buffer,
+            assume_in_range=True,
+        )
         if herbivore.is_hungry():
-            plants = self.plant_index.query_radius(herbivore.position, herbivore.traits.vision_range)
-            visible_plants = self.perception.visible_entities(herbivore, plants)
+            plants = self.plant_index.query_radius_into(
+                herbivore.position,
+                herbivore.traits.vision_range,
+                self._nearby_plants_buffer,
+            )
+            visible_plants = self.perception.visible_entities_into(
+                herbivore,
+                plants,
+                self._visible_plants_buffer,
+                assume_in_range=True,
+            )
         else:
-            visible_plants = []
+            visible_plants = self._visible_plants_buffer
+            visible_plants.clear()
         decision = self.herbivore_policy.decide(herbivore, visible_predators, visible_plants, self.rng)
         herbivore.behavior = decision.state
         herbivore.target_id = decision.target_id
@@ -732,8 +768,17 @@ class World:
         assert predator.traits is not None
         close_distance = predator.traits.attack_range + predator.traits.max_speed
         search_radius = predator.traits.vision_range if predator.is_hungry() else close_distance
-        prey = self.herbivore_index.query_radius(predator.position, search_radius)
-        visible_prey = self.perception.visible_entities(predator, prey)
+        prey = self.herbivore_index.query_radius_into(
+            predator.position,
+            search_radius,
+            self._nearby_prey_buffer,
+        )
+        visible_prey = self.perception.visible_entities_into(
+            predator,
+            prey,
+            self._visible_prey_buffer,
+            assume_in_range=search_radius <= predator.traits.vision_range,
+        )
         decision = self.predator_policy.decide(predator, visible_prey, self.rng)
         predator.behavior = decision.state
         predator.target_id = decision.target_id
@@ -990,9 +1035,10 @@ class World:
         return multiplier
 
     def _nearby_creatures(self, position: np.ndarray, radius: float) -> List[Creature]:
-        creatures: List[Creature] = []
-        creatures.extend(self.herbivore_index.query_radius(position, radius))
-        creatures.extend(self.predator_index.query_radius(position, radius))
+        creatures = self._nearby_creatures_buffer
+        creatures.clear()
+        self.herbivore_index.query_radius_into(position, radius, creatures)
+        self.predator_index.query_radius_into(position, radius, creatures, clear=False)
         return creatures
 
     def _child_traits(self, parent: Creature) -> Tuple[CreatureTraits, Optional[MutationChange]]:
@@ -1042,14 +1088,22 @@ class World:
 
     def _consume_nearby_plant(self, herbivore: Herbivore) -> Optional[SimulationEvent]:
         assert herbivore.traits is not None
-        nearby = self.plant_index.query_radius(
+        nearby = self.plant_index.query_radius_into(
             herbivore.position,
             herbivore.radius + self.config.plant.radius + self.config.plant_interaction_margin,
+            self._nearby_plants_buffer,
         )
-        living = [plant for plant in nearby if getattr(plant, "alive", False)]
-        if not living:
+        plant = None
+        best_distance_sq = math.inf
+        for candidate in nearby:
+            if not getattr(candidate, "alive", False):
+                continue
+            candidate_distance_sq = distance_squared(herbivore.position, getattr(candidate, "position"))
+            if candidate_distance_sq < best_distance_sq:
+                plant = candidate
+                best_distance_sq = candidate_distance_sq
+        if plant is None:
             return None
-        plant = min(living, key=lambda candidate: distance_squared(herbivore.position, candidate.position))
         plant.alive = False
         gain = min(getattr(plant, "energy"), herbivore.traits.food_energy_gain)
         herbivore.energy += gain
@@ -1066,12 +1120,23 @@ class World:
     def _attack_nearby_prey(self, predator: Predator) -> List[SimulationEvent]:
         assert predator.traits is not None
         radius = predator.traits.attack_range + predator.radius + self.config.predator_attack_margin
-        candidates = self.herbivore_index.query_radius(predator.position, radius)
-        living = [prey for prey in candidates if getattr(prey, "alive", False)]
-        if not living:
+        candidates = self.herbivore_index.query_radius_into(
+            predator.position,
+            radius,
+            self._nearby_prey_buffer,
+        )
+        prey = None
+        best_distance_sq = math.inf
+        for candidate in candidates:
+            if not getattr(candidate, "alive", False):
+                continue
+            candidate_distance_sq = distance_squared(predator.position, getattr(candidate, "position"))
+            if candidate_distance_sq < best_distance_sq:
+                prey = candidate
+                best_distance_sq = candidate_distance_sq
+        if prey is None:
             return []
-        prey = min(living, key=lambda candidate: distance_squared(predator.position, candidate.position))
-        if distance_squared(predator.position, prey.position) > radius * radius:
+        if best_distance_sq > radius * radius:
             return []
         events: List[SimulationEvent] = []
         death = self._kill_creature(prey, DeathCause.PREDATION, predator.id)

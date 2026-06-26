@@ -57,6 +57,23 @@ def test_perception_allows_omnidirectional_vision() -> None:
     assert PerceptionSystem().is_visible(observer, np.array([60.0, 100.0]))
 
 
+def test_visible_entities_into_reuses_result_buffer() -> None:
+    observer = _observer(vision_range=80.0, vision_angle_deg=90.0)
+    visible = Plant(id=2, position=np.array([120.0, 100.0]), radius=4.0, kind="plant", energy=20.0)
+    outside_angle = Plant(id=3, position=np.array([100.0, 120.0]), radius=4.0, kind="plant", energy=20.0)
+    outside_range = Plant(id=4, position=np.array([220.0, 100.0]), radius=4.0, kind="plant", energy=20.0)
+    results = [outside_range]
+
+    returned = PerceptionSystem().visible_entities_into(
+        observer,
+        [visible, outside_angle, outside_range],
+        results,
+    )
+
+    assert returned is results
+    assert results == [visible]
+
+
 def test_herbivore_fleeing_has_priority_over_food_and_reproduction() -> None:
     preset = create_default_preset()
     herbivore = Herbivore(

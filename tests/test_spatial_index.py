@@ -45,3 +45,29 @@ def test_query_radius_includes_neighboring_cells_on_boundaries() -> None:
     results = index.query_radius(np.array([64.0, 10.0], dtype=float), radius=1.0)
 
     assert {entity.id for entity in results} == {1, 2}
+
+
+def test_query_radius_into_reuses_result_buffer() -> None:
+    entities = [
+        _entity(1, 10.0, 10.0),
+        _entity(2, 15.0, 10.0),
+        _entity(3, 200.0, 200.0),
+    ]
+    index = SpatialIndex(cell_size=32.0)
+    index.rebuild(entities)
+    sentinel = _entity(99, 0.0, 0.0)
+    results = [sentinel]
+
+    returned = index.query_radius_into(np.array([10.0, 10.0], dtype=float), radius=10.0, results=results)
+
+    assert returned is results
+    assert {entity.id for entity in results} == {1, 2}
+
+    index.query_radius_into(
+        np.array([200.0, 200.0], dtype=float),
+        radius=1.0,
+        results=results,
+        clear=False,
+    )
+
+    assert {entity.id for entity in results} == {1, 2, 3}

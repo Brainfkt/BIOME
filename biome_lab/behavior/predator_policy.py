@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable
 
 import numpy as np
 
@@ -18,11 +18,16 @@ class PredatorPolicy:
         rng: np.random.Generator,
     ) -> BehaviorDecision:
         assert predator.traits is not None
-        prey: List[object] = list(visible_prey)
-        if prey:
-            target = min(prey, key=lambda candidate: distance_squared(predator.position, getattr(candidate, "position")))
+        target = None
+        target_distance_sq = float("inf")
+        for candidate in visible_prey:
+            candidate_distance_sq = distance_squared(predator.position, getattr(candidate, "position"))
+            if candidate_distance_sq < target_distance_sq:
+                target = candidate
+                target_distance_sq = candidate_distance_sq
+        if target is not None:
             close_distance = predator.traits.attack_range + predator.traits.max_speed
-            if predator.is_hungry() or distance_squared(predator.position, getattr(target, "position")) <= close_distance * close_distance:
+            if predator.is_hungry() or target_distance_sq <= close_distance * close_distance:
                 return BehaviorDecision(
                     state=BehaviorState.HUNTING,
                     desired_velocity=seek(predator.position, getattr(target, "position"), predator.traits.max_speed),
