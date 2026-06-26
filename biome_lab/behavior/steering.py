@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Iterable
 
 import numpy as np
@@ -10,7 +11,9 @@ EPSILON_SQ = EPSILON * EPSILON
 
 
 def length_squared(vector: np.ndarray) -> float:
-    return float(np.dot(vector, vector))
+    x = float(vector[0])
+    y = float(vector[1])
+    return x * x + y * y
 
 
 def distance_squared(first: np.ndarray, second: np.ndarray) -> float:
@@ -20,46 +23,70 @@ def distance_squared(first: np.ndarray, second: np.ndarray) -> float:
 
 
 def length(vector: np.ndarray) -> float:
-    return float(np.sqrt(length_squared(vector)))
+    return math.sqrt(length_squared(vector))
 
 
 def normalize_with_length(vector: np.ndarray) -> tuple[np.ndarray, float]:
-    magnitude_sq = length_squared(vector)
+    x = float(vector[0])
+    y = float(vector[1])
+    magnitude_sq = x * x + y * y
     if magnitude_sq < EPSILON_SQ:
         return np.zeros(2, dtype=float), 0.0
-    magnitude = float(np.sqrt(magnitude_sq))
-    return vector / magnitude, magnitude
+    magnitude = math.sqrt(magnitude_sq)
+    return np.array([x / magnitude, y / magnitude], dtype=float), magnitude
 
 
 def normalize(vector: np.ndarray) -> np.ndarray:
-    direction, _ = normalize_with_length(vector)
-    return direction
+    x = float(vector[0])
+    y = float(vector[1])
+    magnitude_sq = x * x + y * y
+    if magnitude_sq < EPSILON_SQ:
+        return np.zeros(2, dtype=float)
+    magnitude = math.sqrt(magnitude_sq)
+    return np.array([x / magnitude, y / magnitude], dtype=float)
 
 
 def clamp_magnitude(vector: np.ndarray, max_length: float) -> np.ndarray:
-    magnitude_sq = length_squared(vector)
+    x = float(vector[0])
+    y = float(vector[1])
+    magnitude_sq = x * x + y * y
     max_length_sq = max_length * max_length
     if magnitude_sq <= max_length_sq or magnitude_sq < EPSILON_SQ:
         return vector
-    magnitude = float(np.sqrt(magnitude_sq))
-    return vector / magnitude * max_length
+    magnitude = math.sqrt(magnitude_sq)
+    scale = max_length / magnitude
+    return np.array([x * scale, y * scale], dtype=float)
 
 
 def seek(current: np.ndarray, target: np.ndarray, max_speed: float) -> np.ndarray:
-    return normalize(target - current) * max_speed
+    delta_x = float(target[0]) - float(current[0])
+    delta_y = float(target[1]) - float(current[1])
+    distance_sq = delta_x * delta_x + delta_y * delta_y
+    if distance_sq < EPSILON_SQ:
+        return np.zeros(2, dtype=float)
+    scale = max_speed / math.sqrt(distance_sq)
+    return np.array([delta_x * scale, delta_y * scale], dtype=float)
 
 
 def flee_from(current: np.ndarray, threats: Iterable[object], max_speed: float) -> np.ndarray:
-    combined = np.zeros(2, dtype=float)
+    current_x = float(current[0])
+    current_y = float(current[1])
+    combined_x = 0.0
+    combined_y = 0.0
     for threat in threats:
-        delta = current - getattr(threat, "position")
-        distance_sq = max(length_squared(delta), EPSILON_SQ)
-        distance = float(np.sqrt(distance_sq))
-        combined += delta / (distance * distance_sq)
-    direction, magnitude = normalize_with_length(combined)
-    if magnitude < EPSILON:
+        threat_position = getattr(threat, "position")
+        delta_x = current_x - float(threat_position[0])
+        delta_y = current_y - float(threat_position[1])
+        distance_sq = max(delta_x * delta_x + delta_y * delta_y, EPSILON_SQ)
+        distance = math.sqrt(distance_sq)
+        scale = 1.0 / (distance * distance_sq)
+        combined_x += delta_x * scale
+        combined_y += delta_y * scale
+    magnitude_sq = combined_x * combined_x + combined_y * combined_y
+    if magnitude_sq < EPSILON_SQ:
         return np.zeros(2, dtype=float)
-    return direction * max_speed
+    scale = max_speed / math.sqrt(magnitude_sq)
+    return np.array([combined_x * scale, combined_y * scale], dtype=float)
 
 
 def wander(

@@ -801,8 +801,16 @@ class World:
             return []
         assert creature.traits is not None
         velocity = self._steer_velocity(creature, desired_velocity, dt)
-        old_position = creature.position.copy()
-        new_position = old_position + velocity * dt
+        old_position = creature.position
+        old_x = float(old_position[0])
+        old_y = float(old_position[1])
+        new_position = np.array(
+            [
+                old_x + float(velocity[0]) * dt,
+                old_y + float(velocity[1]) * dt,
+            ],
+            dtype=float,
+        )
         new_position, velocity = self._apply_bounds(old_position, new_position, velocity, dt)
         new_position, velocity = self._apply_obstacles(old_position, new_position, velocity, creature.radius)
         creature.position = new_position
@@ -810,7 +818,9 @@ class World:
         velocity_direction, speed = normalize_with_length(velocity)
         if speed > EPSILON:
             creature.heading = velocity_direction
-        distance = math.sqrt(distance_squared(creature.position, old_position))
+        movement_x = float(creature.position[0]) - old_x
+        movement_y = float(creature.position[1]) - old_y
+        distance = math.sqrt(movement_x * movement_x + movement_y * movement_y)
         metabolism_multiplier = self._metabolism_multiplier_at(creature.position)
         movement_cost_multiplier = self._movement_cost_multiplier_at(creature.position)
         creature.energy -= creature.traits.basal_metabolism * metabolism_multiplier * dt
@@ -843,27 +853,31 @@ class World:
         if current_speed <= EPSILON:
             return desired_velocity
 
-        max_turn = float(np.deg2rad(self.config.creature_turn_rate_deg)) * dt
-        dot = float(np.clip(np.dot(current_direction, desired_direction), -1.0, 1.0))
-        angle = float(np.arccos(dot))
+        max_turn = math.radians(self.config.creature_turn_rate_deg) * dt
+        current_x = float(current_direction[0])
+        current_y = float(current_direction[1])
+        desired_x = float(desired_direction[0])
+        desired_y = float(desired_direction[1])
+        dot = current_x * desired_x + current_y * desired_y
+        if dot < -1.0:
+            dot = -1.0
+        elif dot > 1.0:
+            dot = 1.0
+        angle = math.acos(dot)
         if angle <= max_turn:
             return desired_velocity
 
-        cross = float(
-            current_direction[0] * desired_direction[1]
-            - current_direction[1] * desired_direction[0]
-        )
+        cross = current_x * desired_y - current_y * desired_x
         turn = max_turn if cross >= 0.0 else -max_turn
-        cos_turn = float(np.cos(turn))
-        sin_turn = float(np.sin(turn))
-        steered_direction = np.array(
+        cos_turn = math.cos(turn)
+        sin_turn = math.sin(turn)
+        return np.array(
             [
-                current_direction[0] * cos_turn - current_direction[1] * sin_turn,
-                current_direction[0] * sin_turn + current_direction[1] * cos_turn,
+                (current_x * cos_turn - current_y * sin_turn) * desired_speed,
+                (current_x * sin_turn + current_y * cos_turn) * desired_speed,
             ],
             dtype=float,
         )
-        return steered_direction * desired_speed
 
     def _apply_bounds(
         self,
@@ -873,13 +887,19 @@ class World:
         dt: float,
     ) -> Sequence[np.ndarray]:
         width, height = self.config.world_width, self.config.world_height
-        bounded = new_position.copy()
-        adjusted_velocity = velocity.copy()
-        if bounded[0] < 0.0 or bounded[0] > width:
-            bounded[0] = float(np.clip(bounded[0], 0.0, width))
+        bounded = new_position
+        adjusted_velocity = velocity
+        if bounded[0] < 0.0:
+            bounded[0] = 0.0
             adjusted_velocity[0] *= -self.config.boundary_bounce
-        if bounded[1] < 0.0 or bounded[1] > height:
-            bounded[1] = float(np.clip(bounded[1], 0.0, height))
+        elif bounded[0] > width:
+            bounded[0] = width
+            adjusted_velocity[0] *= -self.config.boundary_bounce
+        if bounded[1] < 0.0:
+            bounded[1] = 0.0
+            adjusted_velocity[1] *= -self.config.boundary_bounce
+        elif bounded[1] > height:
+            bounded[1] = height
             adjusted_velocity[1] *= -self.config.boundary_bounce
         return bounded, adjusted_velocity
 
