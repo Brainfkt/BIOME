@@ -145,6 +145,7 @@ class MapTopologyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
+    palette: Literal["natural", "hydrology", "arid", "grayscale"] = "natural"
     grid_columns: int = Field(default=80, ge=8, le=512)
     grid_rows: int = Field(default=54, ge=8, le=512)
     base_elevation: float = Field(default=0.5, ge=0, le=1)

@@ -87,9 +87,13 @@ class Renderer:
             return
         rows, columns = grid.shape
         terrain = pygame.Surface((columns, rows))
+        palette = colors.TERRAIN_PALETTES.get(
+            world.config.topology.palette,
+            colors.TERRAIN_PALETTES["natural"],
+        )
         for y in range(rows):
             for x in range(columns):
-                terrain.set_at((x, y), self._terrain_color(float(grid[y, x])))
+                terrain.set_at((x, y), self._terrain_color(float(grid[y, x]), palette))
         target = pygame.Rect(
             int(self.offset[0]),
             int(self.offset[1]),
@@ -99,16 +103,20 @@ class Renderer:
         scaled = pygame.transform.smoothscale(terrain, (target.width, target.height))
         surface.blit(scaled, target)
 
-    def _terrain_color(self, elevation: float) -> Tuple[int, int, int]:
+    def _terrain_color(
+        self,
+        elevation: float,
+        palette: Tuple[Tuple[int, int, int], Tuple[int, int, int], Tuple[int, int, int]],
+    ) -> Tuple[int, int, int]:
         elevation = max(0.0, min(elevation, 1.0))
         if elevation < 0.5:
             t = elevation / 0.5
-            low = colors.TERRAIN_LOW
-            high = colors.TERRAIN_MID
+            low = palette[0]
+            high = palette[1]
         else:
             t = (elevation - 0.5) / 0.5
-            low = colors.TERRAIN_MID
-            high = colors.TERRAIN_HIGH
+            low = palette[1]
+            high = palette[2]
         return (
             int(low[0] + (high[0] - low[0]) * t),
             int(low[1] + (high[1] - low[1]) * t),

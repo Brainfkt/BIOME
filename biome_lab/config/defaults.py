@@ -138,6 +138,7 @@ def create_default_preset() -> BiomeLabPreset:
         environment=EnvironmentConfig(),
         topology=MapTopologyConfig(
             enabled=False,
+            palette="natural",
             grid_columns=80,
             grid_rows=54,
             base_elevation=0.5,

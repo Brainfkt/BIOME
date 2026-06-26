@@ -7,6 +7,12 @@ WORLD_GRID = (39, 52, 50)
 TERRAIN_LOW = (32, 60, 66)
 TERRAIN_MID = (31, 47, 38)
 TERRAIN_HIGH = (90, 86, 62)
+TERRAIN_PALETTES = {
+    "natural": (TERRAIN_LOW, TERRAIN_MID, TERRAIN_HIGH),
+    "hydrology": ((24, 70, 94), (61, 119, 104), (184, 176, 126)),
+    "arid": ((85, 70, 48), (128, 104, 63), (210, 180, 112)),
+    "grayscale": ((38, 42, 43), (105, 114, 112), (218, 224, 214)),
+}
 PANEL_BG = (30, 36, 39)
 PANEL_BORDER = (64, 76, 79)
 TEXT = (225, 232, 229)
