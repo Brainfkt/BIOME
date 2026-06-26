@@ -79,6 +79,9 @@ def _event_rows(events: Iterable[object], repetition: int, seed: int):
                 "mutation_count": event.mutation_count,
                 "system": event.system,
                 "enabled": event.enabled,
+                "mutation_trait": event.mutation_trait,
+                "old_value": event.old_value,
+                "new_value": event.new_value,
             }
         )
     return rows

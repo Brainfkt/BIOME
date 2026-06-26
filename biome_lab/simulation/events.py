@@ -11,6 +11,7 @@ class EventKind(str, Enum):
     FEEDING = "feeding"
     INITIAL_INFECTION = "initial_infection"
     INFECTION = "infection"
+    MUTATION = "mutation"
     SYSTEM_TOGGLE = "system_toggle"
     PREDATION = "predation"
     RECOVERY = "recovery"
@@ -37,3 +38,6 @@ class SimulationEvent:
     mutation_count: Optional[int] = None
     system: Optional[str] = None
     enabled: Optional[bool] = None
+    mutation_trait: Optional[str] = None
+    old_value: Optional[float] = None
+    new_value: Optional[float] = None

@@ -4,6 +4,7 @@ import math
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 import numpy as np
+from pydantic import ValidationError
 
 from biome_lab.behavior.herbivore_policy import HerbivorePolicy
 from biome_lab.behavior.perception import PerceptionSystem
@@ -13,6 +14,7 @@ from biome_lab.config.schemas import (
     BiomeLabPreset,
     CreatureState,
     CreatureTraits,
+    MutableTrait,
     ObstacleConfig,
     PlantState,
     WorldState,
@@ -29,6 +31,7 @@ from biome_lab.simulation.spatial_index import SpatialIndex
 
 
 MAX_CREATURE_TURN_RATE = float(np.deg2rad(220.0))
+MutationChange = Tuple[MutableTrait, float, float]
 
 
 class World:
@@ -981,14 +984,14 @@ class World:
         creatures.extend(self.predator_index.query_radius(position, radius))
         return creatures
 
-    def _child_traits(self, parent: Creature) -> Tuple[CreatureTraits, bool]:
+    def _child_traits(self, parent: Creature) -> Tuple[CreatureTraits, Optional[MutationChange]]:
         assert parent.traits is not None
         mutation = self.config.mutation
         if not mutation.enabled or float(self.rng.random()) >= mutation.probability:
-            return parent.traits, False
+            return parent.traits, None
 
         base_traits = self.preset.herbivore if parent.kind == "herbivore" else self.preset.predator
-        updates: Dict[str, float] = {}
+        candidates: List[MutableTrait] = []
         for trait_name in mutation.mutable_traits:
             if not hasattr(parent.traits, trait_name) or not hasattr(base_traits, trait_name):
                 continue
@@ -996,13 +999,35 @@ class World:
             base_value = getattr(base_traits, trait_name)
             if not isinstance(current_value, (int, float)) or not isinstance(base_value, (int, float)):
                 continue
+            bounds = mutation.trait_bounds.get(trait_name)
+            if bounds is None:
+                continue
+            lower = max(bounds.min_value, float(base_value) * mutation.min_trait_multiplier)
+            upper = min(bounds.max_value, float(base_value) * mutation.max_trait_multiplier)
+            if upper <= lower:
+                continue
+            candidates.append(trait_name)
+        if not candidates:
+            return parent.traits, None
+
+        for index in np.atleast_1d(self.rng.permutation(len(candidates))):
+            trait_name = candidates[int(index)]
+            current_value = float(getattr(parent.traits, trait_name))
+            base_value = float(getattr(base_traits, trait_name))
+            bounds = mutation.trait_bounds[trait_name]
             factor = 1.0 + float(self.rng.uniform(-mutation.strength, mutation.strength))
-            lower = float(base_value) * mutation.min_trait_multiplier
-            upper = float(base_value) * mutation.max_trait_multiplier
-            updates[trait_name] = float(np.clip(float(current_value) * factor, lower, upper))
-        if not updates:
-            return parent.traits, False
-        return parent.traits.model_copy(update=updates), True
+            lower = max(bounds.min_value, base_value * mutation.min_trait_multiplier)
+            upper = min(bounds.max_value, base_value * mutation.max_trait_multiplier)
+            new_value = float(np.clip(current_value * factor, lower, upper))
+            if abs(new_value - current_value) <= 1e-12:
+                continue
+            data = parent.traits.model_dump()
+            data[trait_name] = new_value
+            try:
+                return CreatureTraits.model_validate(data), (trait_name, current_value, new_value)
+            except ValidationError:
+                continue
+        return parent.traits, None
 
     def _consume_nearby_plant(self, herbivore: Herbivore) -> Optional[SimulationEvent]:
         assert herbivore.traits is not None
@@ -1073,7 +1098,7 @@ class World:
         if child_position is None:
             self.last_spawn_error = "no free position available for child"
             return []
-        child_traits, mutated = self._child_traits(parent)
+        child_traits, mutation_change = self._child_traits(parent)
         child = self.spawn_creature(
             parent.kind,
             position=child_position,
@@ -1081,13 +1106,13 @@ class World:
             initial_energy=child_energy,
             traits_override=child_traits,
             generation=parent.generation + 1,
-            mutation_count=parent.mutation_count + (1 if mutated else 0),
+            mutation_count=parent.mutation_count + (1 if mutation_change is not None else 0),
         )
         if child is None:
             return []
         parent.energy -= parent.traits.reproduction_cost
         parent.reproduction_cooldown_remaining = parent.traits.reproduction_cooldown
-        return [
+        events = [
             SimulationEvent(
                 time=self.time,
                 kind=EventKind.BIRTH,
@@ -1099,6 +1124,23 @@ class World:
                 mutation_count=child.mutation_count,
             )
         ]
+        if mutation_change is not None:
+            trait_name, old_value, new_value = mutation_change
+            events.append(
+                SimulationEvent(
+                    time=self.time,
+                    kind=EventKind.MUTATION,
+                    species=parent.kind,
+                    entity_id=child.id,
+                    target_id=parent.id,
+                    generation=child.generation,
+                    mutation_count=child.mutation_count,
+                    mutation_trait=trait_name,
+                    old_value=old_value,
+                    new_value=new_value,
+                )
+            )
+        return events
 
     def _kill_creature(
         self,
