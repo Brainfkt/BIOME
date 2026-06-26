@@ -1,0 +1,34 @@
+[project]
+name = "biome-lab"
+version = "0.1.0"
+description = "Simulation scientifique 2D agent-based model pour un ecosysteme artificiel predateur-proie-ressource."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pygame-ce>=2.5.0",
+  "numpy>=1.24.0",
+  "pandas>=2.0.0",
+  "pydantic>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+yaml = [
+  "PyYAML>=6.0.0",
+]
+
+[project.scripts]
+biome-lab = "biome_lab.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["biome_lab*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
