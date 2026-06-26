@@ -22,18 +22,26 @@ class Renderer:
         self.offset = np.zeros(2, dtype=float)
         self._state_label_cache: Dict[Tuple[str, Tuple[int, int, int]], pygame.Surface] = {}
 
-    def configure_view(self, rect: pygame.Rect, world_width: float, world_height: float) -> None:
+    def configure_view(
+        self,
+        rect: pygame.Rect,
+        world_width: float,
+        world_height: float,
+        zoom: float = 1.0,
+        pan: Optional[np.ndarray] = None,
+    ) -> None:
         self.world_rect = rect
-        self.scale = min(rect.width / world_width, rect.height / world_height)
+        self.scale = min(rect.width / world_width, rect.height / world_height) * max(0.2, zoom)
         used_width = world_width * self.scale
         used_height = world_height * self.scale
+        pan_offset = np.zeros(2, dtype=float) if pan is None else pan
         self.offset = np.array(
             [
                 rect.x + (rect.width - used_width) / 2.0,
                 rect.y + (rect.height - used_height) / 2.0,
             ],
             dtype=float,
-        )
+        ) + pan_offset
 
     def world_to_screen(self, position: np.ndarray) -> Tuple[int, int]:
         point = self.offset + position * self.scale
@@ -51,20 +59,89 @@ class Renderer:
         show_vision: bool,
         show_states: bool,
         selected_id: Optional[int],
+        zoom: float = 1.0,
+        pan: Optional[np.ndarray] = None,
     ) -> None:
-        self.configure_view(rect, world.config.world_width, world.config.world_height)
+        self.configure_view(rect, world.config.world_width, world.config.world_height, zoom, pan)
         pygame.draw.rect(surface, colors.WORLD_BG, rect)
-        self._draw_grid(surface, world)
         clipped = surface.get_clip()
         surface.set_clip(rect)
+        self._draw_topology(surface, world)
+        self._draw_zones(surface, world)
+        self._draw_grid(surface, world)
         living_count = world.living_creature_count()
         if show_vision:
             self._draw_vision(surface, world, selected_id)
+        self._draw_obstacles(surface, world)
         self._draw_plants(surface, world)
         self._draw_creatures(surface, world.herbivores, selected_id, show_states, living_count)
         self._draw_creatures(surface, world.predators, selected_id, show_states, living_count)
         surface.set_clip(clipped)
         pygame.draw.rect(surface, colors.PANEL_BORDER, rect, 1)
+
+    def _draw_topology(self, surface: pygame.Surface, world) -> None:
+        if not getattr(world.config, "topology", None) or not world.config.topology.enabled:
+            return
+        grid = getattr(world, "topology_grid", None)
+        if grid is None:
+            return
+        rows, columns = grid.shape
+        terrain = pygame.Surface((columns, rows))
+        for y in range(rows):
+            for x in range(columns):
+                terrain.set_at((x, y), self._terrain_color(float(grid[y, x])))
+        target = pygame.Rect(
+            int(self.offset[0]),
+            int(self.offset[1]),
+            max(1, int(world.config.world_width * self.scale)),
+            max(1, int(world.config.world_height * self.scale)),
+        )
+        scaled = pygame.transform.smoothscale(terrain, (target.width, target.height))
+        surface.blit(scaled, target)
+
+    def _terrain_color(self, elevation: float) -> Tuple[int, int, int]:
+        elevation = max(0.0, min(elevation, 1.0))
+        if elevation < 0.5:
+            t = elevation / 0.5
+            low = colors.TERRAIN_LOW
+            high = colors.TERRAIN_MID
+        else:
+            t = (elevation - 0.5) / 0.5
+            low = colors.TERRAIN_MID
+            high = colors.TERRAIN_HIGH
+        return (
+            int(low[0] + (high[0] - low[0]) * t),
+            int(low[1] + (high[1] - low[1]) * t),
+            int(low[2] + (high[2] - low[2]) * t),
+        )
+
+    def _world_rect_to_screen_rect(self, x: float, y: float, width: float, height: float) -> pygame.Rect:
+        top_left = self.world_to_screen(np.array([x, y], dtype=float))
+        bottom_right = self.world_to_screen(np.array([x + width, y + height], dtype=float))
+        return pygame.Rect(
+            top_left[0],
+            top_left[1],
+            bottom_right[0] - top_left[0],
+            bottom_right[1] - top_left[1],
+        )
+
+    def _draw_zones(self, surface: pygame.Surface, world) -> None:
+        if not getattr(world, "zones", None):
+            return
+        overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        for zone in world.zones:
+            rect = self._world_rect_to_screen_rect(zone.x, zone.y, zone.width, zone.height)
+            fill = (zone.color[0], zone.color[1], zone.color[2], 52)
+            border = (colors.ZONE_BORDER[0], colors.ZONE_BORDER[1], colors.ZONE_BORDER[2], 150)
+            pygame.draw.rect(overlay, fill, rect)
+            pygame.draw.rect(overlay, border, rect, 1)
+        surface.blit(overlay, (0, 0))
+
+    def _draw_obstacles(self, surface: pygame.Surface, world) -> None:
+        for obstacle in getattr(world, "obstacles", []):
+            rect = self._world_rect_to_screen_rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+            pygame.draw.rect(surface, colors.OBSTACLE, rect)
+            pygame.draw.rect(surface, colors.OBSTACLE_BORDER, rect, 1)
 
     def _draw_grid(self, surface: pygame.Surface, world) -> None:
         step = 100
