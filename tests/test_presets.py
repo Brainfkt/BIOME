@@ -12,3 +12,15 @@ def test_default_json_preset_matches_python_default() -> None:
 
     assert json_preset.model_dump(mode="json") == python_preset.model_dump(mode="json")
 
+
+def test_preset_json_round_trip_can_reload(tmp_path) -> None:
+    preset = create_default_preset()
+    first_path = tmp_path / "preset.json"
+    second_path = tmp_path / "preset_roundtrip.json"
+
+    preset.save_json(first_path)
+    exported = BiomeLabPreset.from_json_path(first_path)
+    exported.save_json(second_path)
+    reloaded = BiomeLabPreset.from_json_path(second_path)
+
+    assert reloaded.model_dump(mode="json") == preset.model_dump(mode="json")

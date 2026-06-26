@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 from biome_lab.config.defaults import create_default_preset
@@ -95,6 +97,26 @@ def test_headless_run_rejects_invalid_repetitions(tmp_path) -> None:
         assert "--repetitions" in str(exc)
     else:
         raise AssertionError("invalid repetitions should be rejected")
+
+
+def test_headless_import_path_does_not_import_pygame() -> None:
+    code = (
+        "import sys; "
+        "import biome_lab.main; "
+        "import biome_lab.experiments.runner; "
+        "import biome_lab.simulation.world; "
+        "print('pygame' in sys.modules)"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "False"
 
 
 def test_event_rows_include_mutation_details() -> None:

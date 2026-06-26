@@ -51,6 +51,17 @@ def test_initial_creatures_cannot_exceed_max_creatures() -> None:
         BiomeLabPreset.model_validate(data)
 
 
+def test_world_dimensions_must_fit_spawn_padding() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["world_width"] = 210
+    data["simulation"]["world_height"] = 210
+    data["simulation"]["reproduction_spawn_radius"] = 120.0
+    data["simulation"]["topology"]["features"] = []
+
+    with pytest.raises(ValidationError, match="world dimensions"):
+        BiomeLabPreset.model_validate(data)
+
+
 def test_obstacles_must_fit_inside_world() -> None:
     data = create_default_preset().model_dump()
     data["simulation"]["environment"]["obstacles"] = [
@@ -65,6 +76,28 @@ def test_obstacles_must_fit_inside_world() -> None:
     ]
 
     with pytest.raises(ValidationError, match="obstacle"):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_environment_zones_must_fit_inside_world() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["environment"]["zones"] = [
+        {
+            "name": "outside_zone",
+            "x": data["simulation"]["world_width"] - 10,
+            "y": 50,
+            "width": 100,
+            "height": 100,
+            "color": [70, 106, 124],
+            "speed_multiplier": 1,
+            "metabolism_multiplier": 1,
+            "movement_cost_multiplier": 1,
+            "plant_regrowth_multiplier": 1,
+            "disease_transmission_multiplier": 1,
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="environment zone"):
         BiomeLabPreset.model_validate(data)
 
 
@@ -98,6 +131,16 @@ def test_topology_feature_center_must_be_inside_world() -> None:
         BiomeLabPreset.model_validate(data)
 
 
+def test_topology_feature_extent_must_match_world_scale() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["topology"]["features"][0]["length"] = (
+        max(data["simulation"]["world_width"], data["simulation"]["world_height"]) * 2.0 + 1.0
+    )
+
+    with pytest.raises(ValidationError, match="extent"):
+        BiomeLabPreset.model_validate(data)
+
+
 def test_topology_grid_too_large_for_ui_is_rejected() -> None:
     data = create_default_preset().model_dump()
     data["simulation"]["topology"]["grid_columns"] = 512
@@ -112,6 +155,31 @@ def test_simulation_and_protocol_seeds_must_match() -> None:
     data["protocol"]["seed"] = data["simulation"]["seed"] + 1
 
     with pytest.raises(ValidationError, match="simulation.seed"):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_enabled_seasons_require_at_least_one_phase() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["seasons"]["enabled"] = True
+    data["simulation"]["seasons"]["phases"] = []
+
+    with pytest.raises(ValidationError, match="enabled seasons"):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_protocol_duration_must_be_positive() -> None:
+    data = create_default_preset().model_dump()
+    data["protocol"]["duration_seconds"] = 0
+
+    with pytest.raises(ValidationError):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_protocol_repetitions_must_be_positive() -> None:
+    data = create_default_preset().model_dump()
+    data["protocol"]["repetitions"] = 0
+
+    with pytest.raises(ValidationError):
         BiomeLabPreset.model_validate(data)
 
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from biome_lab.config.defaults import create_default_preset
-from biome_lab.config.schemas import BiomeLabPreset, ObstacleConfig
+from biome_lab.config.schemas import BiomeLabPreset, DiseaseState, ObstacleConfig
 from biome_lab.simulation.events import EventKind
 from biome_lab.simulation.world import World
 
@@ -39,13 +40,29 @@ def test_disease_transmits_by_proximity_when_enabled() -> None:
     world = World(preset)
     source = world.spawn_creature("herbivore", np.array([100.0, 100.0]), initial=True)
     target = world.spawn_creature("herbivore", np.array([110.0, 100.0]), initial=True)
-    source.disease_state = "infected"
+    source.infect()
     world.refresh_indices()
 
     events = world.update(0.1)
 
-    assert target.disease_state == "infected"
+    assert target.disease_state == DiseaseState.INFECTED
     assert any(event.kind.value == "infection" for event in events)
+
+
+def test_disease_state_transitions_are_strict() -> None:
+    world = World(create_default_preset())
+    creature = world.herbivores[0]
+
+    with pytest.raises(ValueError, match="invalid disease transition"):
+        creature.recover()
+
+    assert creature.disease_state == DiseaseState.SUSCEPTIBLE
+    creature.infect()
+    assert creature.disease_state == DiseaseState.INFECTED
+    creature.recover()
+    assert creature.disease_state == DiseaseState.RECOVERED
+    with pytest.raises(ValueError, match="invalid disease transition"):
+        creature.infect()
 
 
 def test_mutation_marks_child_generation_when_enabled() -> None:
@@ -262,7 +279,7 @@ def test_runtime_settings_toggle_experimental_systems() -> None:
     assert world.config.seasons.enabled
     assert world.config.mutation.enabled
     assert world.config.disease.enabled
-    assert creature.disease_state == "infected"
+    assert creature.disease_state == DiseaseState.INFECTED
     assert topology_events[0].kind == EventKind.SYSTEM_TOGGLE
     assert any(event.kind == EventKind.INITIAL_INFECTION for event in disease_events)
 
