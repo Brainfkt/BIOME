@@ -45,18 +45,28 @@ class MetricsCollector:
             "deaths_herbivores_total": float(self._death_count_by_species("herbivore")),
             "deaths_predators_total": float(self._death_count_by_species("predator")),
             "deaths_famine_total": float(self._death_count(DeathCause.FAMINE)),
+            "deaths_disease_total": float(self._death_count(DeathCause.DISEASE)),
             "deaths_predation_total": float(self._death_count(DeathCause.PREDATION)),
             "deaths_old_age_total": float(self._death_count(DeathCause.OLD_AGE)),
             "death_rate_herbivores_window": self._death_rate(world.time, species="herbivore"),
             "death_rate_predators_window": self._death_rate(world.time, species="predator"),
             "death_rate_famine_window": self._death_rate(world.time, cause=DeathCause.FAMINE),
+            "death_rate_disease_window": self._death_rate(world.time, cause=DeathCause.DISEASE),
             "death_rate_predation_window": self._death_rate(world.time, cause=DeathCause.PREDATION),
             "death_rate_old_age_window": self._death_rate(world.time, cause=DeathCause.OLD_AGE),
+            "infection_rate_window": self._event_rate(EventKind.INFECTION, world.time),
             "predation_rate_window": self._event_rate(EventKind.PREDATION, world.time),
             "reproduction_rate_herbivores_window": self._event_rate(EventKind.BIRTH, world.time, species="herbivore"),
             "reproduction_rate_predators_window": self._event_rate(EventKind.BIRTH, world.time, species="predator"),
             "mean_survival_time_herbivores": self._mean_survival_time("herbivore"),
             "mean_survival_time_predators": self._mean_survival_time("predator"),
+            "infected_herbivores": float(self._infected_count(herbivores)),
+            "infected_predators": float(self._infected_count(predators)),
+            "mean_generation_herbivores": self._mean_attribute(herbivores, "generation"),
+            "mean_generation_predators": self._mean_attribute(predators, "generation"),
+            "mean_mutation_count_herbivores": self._mean_attribute(herbivores, "mutation_count"),
+            "mean_mutation_count_predators": self._mean_attribute(predators, "mutation_count"),
+            "season_index": float(getattr(world, "current_season_index", lambda: -1)()),
         }
         row["population_variance_herbivores_window"] = self._population_variance(
             "population_herbivores",
@@ -96,6 +106,14 @@ class MetricsCollector:
         if not creatures:
             return 0.0
         return float(np.mean([creature.energy for creature in creatures]))
+
+    def _mean_attribute(self, creatures: List[Creature], attribute: str) -> float:
+        if not creatures:
+            return 0.0
+        return float(np.mean([float(getattr(creature, attribute, 0.0)) for creature in creatures]))
+
+    def _infected_count(self, creatures: List[Creature]) -> int:
+        return sum(1 for creature in creatures if getattr(creature, "disease_state", "susceptible") == "infected")
 
     def _death_count(self, cause: DeathCause) -> int:
         return sum(1 for event in self.events if event.kind == EventKind.DEATH and event.cause == cause)

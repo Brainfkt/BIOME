@@ -34,8 +34,28 @@ METRIC_DEFINITIONS: Dict[str, MetricDefinition] = {
     ),
     "death_causes": MetricDefinition(
         name="Distribution des causes de mortalite",
-        definition="Comptage cumulatif des morts par famine, predation et vieillesse.",
+        definition="Comptage cumulatif des morts par famine, maladie, predation et vieillesse.",
         scientific_use="Identifie le mecanisme dominant de declin populationnel.",
+    ),
+    "infection_rate": MetricDefinition(
+        name="Taux d'infection",
+        definition="Nombre de nouvelles infections par seconde simulee sur la fenetre recente.",
+        scientific_use="Mesure la pression epidemiologique creee par densite, saisons et proximite.",
+    ),
+    "infected_population": MetricDefinition(
+        name="Population infectee",
+        definition="Nombre d'individus vivants actuellement dans l'etat infecte.",
+        scientific_use="Suit l'intensite instantanee d'une epidemie dans l'ecosysteme.",
+    ),
+    "mutation_load": MetricDefinition(
+        name="Charge mutationnelle moyenne",
+        definition="Nombre moyen de mutations heritees par individu vivant.",
+        scientific_use="Suit la derive des traits sous reproduction et pression de selection.",
+    ),
+    "season_index": MetricDefinition(
+        name="Indice saisonnier",
+        definition="Indice numerique de la phase saisonniere active, -1 si les saisons sont desactivees.",
+        scientific_use="Relie les changements demographiques aux cycles environnementaux.",
     ),
     "predation_rate": MetricDefinition(
         name="Taux de predation",
@@ -63,4 +83,3 @@ METRIC_DEFINITIONS: Dict[str, MetricDefinition] = {
         scientific_use="Detecte instabilite, oscillations ou regime proche d'une transition.",
     ),
 }
-
