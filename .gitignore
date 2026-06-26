@@ -34,3 +34,4 @@ dist/
 # Local automation metadata
 .codex/
 .agents/
+AGENTS.md

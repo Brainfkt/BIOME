@@ -36,6 +36,18 @@ ou depuis le dossier du projet:
 python main.py
 ```
 
+Charger un preset JSON dans l'interface:
+
+```bash
+biome-lab ui --preset presets/default_experiment.json
+```
+
+Lancer une experience headless avec exports JSON/CSV:
+
+```bash
+biome-lab run --preset presets/default_experiment.json --duration 300 --repetitions 5 --output-dir exports
+```
+
 ## Controles
 
 - `Play` / `Pause`: lance ou suspend la simulation.
@@ -45,9 +57,15 @@ python main.py
 - `States`: affiche ou masque les etats comportementaux.
 - `Morts: espece` / `Morts: cause`: alterne le graphique de mortalite.
 - `Export`: ecrit le preset, les series temporelles et le protocole dans `exports/`.
+- `Save`: sauvegarde un etat sandbox JSON dans `exports/`.
+- `View`: recentre la camera.
+- Outils sandbox: `Select`, `Plant`, `Herb`, `Pred`, `Obstacle`, `Erase`.
 - `Espace`: lance ou suspend la simulation.
 - `R`: relance la simulation.
 - `M`: alterne le graphique de mortalite.
+- `1` a `6`: selection rapide des outils sandbox.
+- Molette: zoom.
+- Clic droit ou clic molette + glisser: deplacement de camera.
 - Clic gauche sur une creature: affiche son etat interne et sa fiche scientifique.
 
 ## Structure du projet
@@ -90,6 +108,14 @@ Le bouton `Export` produit des fichiers dans `exports/`:
 - `*_metrics.csv`: series temporelles des metriques.
 - `*_protocol.md`: question, hypothese, variables, constantes et definitions.
 
+Le mode headless produit un dossier horodate contenant:
+
+- `preset.json`: preset utilise.
+- `metrics.csv`: series temporelles avec repetition et seed.
+- `events.csv`: naissances, morts, predations, infections et guerisons.
+- `summary.csv`: resume final par repetition.
+- `metadata.json`: contexte du run.
+
 Le dossier `exports/` est ignore par Git, car il contient des resultats de runs locaux. Si un resultat doit etre partage, copiez le fichier pertinent dans un dossier dedie et documentez le contexte de generation.
 
 ## Tests
@@ -102,7 +128,8 @@ Les tests couvrent les schemas de configuration, les priorites comportementales,
 
 ## Limites scientifiques
 
-- Le monde est un espace 2D simplifie sans obstacles ni zones environnementales.
+- Le monde par defaut reste un espace 2D simplifie; obstacles et zones sont des extensions sandbox configurables.
+- Les obstacles, zones, saisons, maladies et mutations sont disponibles comme extensions sandbox, mais restent des modeles abstraits.
 - La perception utilise distance et angle, sans occlusion.
 - L'energie, la reproduction et la predation sont volontairement abstraites.
 - Les resultats sont qualitatifs et doivent etre interpretes avec plusieurs repetitions et seeds controlees.
