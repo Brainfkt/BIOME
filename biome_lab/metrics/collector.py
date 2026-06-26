@@ -4,6 +4,7 @@ from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
+from biome_lab.config.schemas import DiseaseState
 from biome_lab.entities.creatures import BehaviorState, Creature
 from biome_lab.metrics.time_series import TimeSeries
 from biome_lab.simulation.events import DeathCause, EventKind, SimulationEvent
@@ -121,7 +122,11 @@ class MetricsCollector:
         return float(np.mean([float(getattr(creature, attribute, 0.0)) for creature in creatures]))
 
     def _infected_count(self, creatures: List[Creature]) -> int:
-        return sum(1 for creature in creatures if getattr(creature, "disease_state", "susceptible") == "infected")
+        return sum(
+            1
+            for creature in creatures
+            if getattr(creature, "disease_state", DiseaseState.SUSCEPTIBLE) == DiseaseState.INFECTED
+        )
 
     def _death_count(self, cause: DeathCause) -> int:
         return sum(1 for event in self.events if event.kind == EventKind.DEATH and event.cause == cause)
