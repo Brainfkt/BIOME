@@ -63,6 +63,32 @@ def test_headless_run_can_disable_detailed_events(tmp_path) -> None:
     assert rows == []
 
 
+def test_headless_run_can_use_light_metrics_mode(tmp_path) -> None:
+    args = argparse.Namespace(
+        preset=None,
+        output_dir=tmp_path,
+        duration=0.2,
+        repetitions=1,
+        seed=123,
+        no_events=True,
+        metrics_mode="light",
+    )
+
+    output_dir = run_headless(args)
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    with (output_dir / "metrics.csv").open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert metadata["metrics_mode"] == "light"
+    assert metadata["event_metrics_complete"] is False
+    assert rows
+    assert "population_herbivores" in rows[0]
+    assert "mean_energy_herbivores" in rows[0]
+    assert "behavior_share_herbivore_exploring" not in rows[0]
+    assert "death_rate_herbivores_window" not in rows[0]
+
+
 def test_load_simulation_document_detects_world_state(tmp_path) -> None:
     state_path = tmp_path / "sandbox_state.json"
     World(create_default_preset()).to_world_state().save_json(state_path)

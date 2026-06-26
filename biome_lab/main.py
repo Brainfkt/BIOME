@@ -76,6 +76,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--repetitions", type=int, help="nombre de repetitions")
     run_parser.add_argument("--seed", type=int, help="seed de depart")
     run_parser.add_argument("--no-events", action="store_true", help="ne pas conserver les evenements detailles")
+    run_parser.add_argument(
+        "--metrics-mode",
+        choices=["full", "light"],
+        default="full",
+        help="niveau de metriques exportees: full scientifique, light pour runs massifs",
+    )
 
     return parser
 
@@ -119,6 +125,7 @@ def _run_world_state_once(
     duration_seconds: Optional[float],
     seed: Optional[int],
     record_events: bool = True,
+    metrics_mode: str = "full",
 ):
     from biome_lab.experiments.runner import RepetitionResult
     from biome_lab.metrics.collector import MetricsCollector
@@ -133,7 +140,10 @@ def _run_world_state_once(
         world.preset = run_preset
         world.config = run_preset.simulation
         world.rng = create_rng(seed)
-    collector = MetricsCollector(window_seconds=world.preset.simulation.metrics_window_seconds)
+    collector = MetricsCollector(
+        window_seconds=world.preset.simulation.metrics_window_seconds,
+        mode=metrics_mode,
+    )
     if record_events:
         collector.record_events(world.events)
     else:
@@ -167,6 +177,7 @@ def run_headless(args: argparse.Namespace) -> Path:
 
     _validate_run_overrides(args)
     record_events = not bool(getattr(args, "no_events", False))
+    metrics_mode = getattr(args, "metrics_mode", "full")
     document_type, document = load_simulation_document(args.preset)
     if document_type == "world_state":
         if args.repetitions not in (None, 1):
@@ -178,7 +189,13 @@ def run_headless(args: argparse.Namespace) -> Path:
             preset.simulation.seed = args.seed
             preset.protocol.seed = args.seed
             document = document.model_copy(update={"preset": preset})
-        results = _run_world_state_once(document, args.duration, args.seed, record_events=record_events)
+        results = _run_world_state_once(
+            document,
+            args.duration,
+            args.seed,
+            record_events=record_events,
+            metrics_mode=metrics_mode,
+        )
     else:
         assert isinstance(document, BiomeLabPreset)
         preset = document
@@ -188,6 +205,7 @@ def run_headless(args: argparse.Namespace) -> Path:
             repetitions=args.repetitions,
             seed=args.seed,
             record_events=record_events,
+            metrics_mode=metrics_mode,
         )
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -217,8 +235,9 @@ def run_headless(args: argparse.Namespace) -> Path:
             "repetitions": args.repetitions or preset.protocol.repetitions,
             "seed": args.seed if args.seed is not None else preset.protocol.seed,
             "events_recorded": record_events,
-            "event_metrics_complete": record_events,
+            "event_metrics_complete": record_events and metrics_mode == "full",
             "event_export_mode": "full" if record_events else "disabled",
+            "metrics_mode": metrics_mode,
             "output_files": ["preset.json", "metrics.csv", "events.csv", "summary.csv", "metadata.json"],
         },
         output_dir / "metadata.json",
