@@ -12,6 +12,7 @@ La version actuelle vise une simulation qualitative et reproductible. Elle ne ch
 - Mouvement lisse avec limite de rotation pour eviter les demi-tours instantanes.
 - Tableau de bord Pygame avec populations, metriques, repartition comportementale et causes de mortalite.
 - Inspection individuelle d'une creature par clic.
+- Topologie de carte modifiable: vallees, cretes et lissage du relief en mode sandbox.
 - Export des resultats en JSON, CSV et Markdown.
 
 ## Installation
@@ -59,11 +60,12 @@ biome-lab run --preset presets/default_experiment.json --duration 300 --repetiti
 - `Export`: ecrit le preset, les series temporelles et le protocole dans `exports/`.
 - `Save`: sauvegarde un etat sandbox JSON dans `exports/`.
 - `View`: recentre la camera.
-- Outils sandbox: `Select`, `Plant`, `Herb`, `Pred`, `Obstacle`, `Erase`.
+- Outils sandbox: `Select`, `Plant`, `Herb`, `Pred`, `Obstacle`, `Valley`, `Ridge`, `Smooth`, `Erase`.
 - `Espace`: lance ou suspend la simulation.
 - `R`: relance la simulation.
 - `M`: alterne le graphique de mortalite.
-- `1` a `6`: selection rapide des outils sandbox.
+- `1` a `9`: selection rapide des outils sandbox.
+- Avec `Valley`, `Ridge` ou `Smooth`, clic gauche et glisser peint directement le relief.
 - Molette: zoom.
 - Clic droit ou clic molette + glisser: deplacement de camera.
 - Clic gauche sur une creature: affiche son etat interne et sa fiche scientifique.
@@ -97,6 +99,7 @@ Les parametres principaux sont:
 - `hunger_threshold`: seuil a partir duquel l'alimentation devient prioritaire.
 - `reproduction_threshold`, `reproduction_cost` et `reproduction_cooldown`: contraintes de reproduction.
 - `flee_distance`, `attack_range` et `food_energy_gain`: regles propres aux interactions predateur-proie.
+- `topology`: grille d'elevation permettant de creer vallees, cretes, collines et bassins; les pentes augmentent le cout de deplacement.
 
 Les seeds sont fixees dans les presets pour rendre les runs comparables.
 
@@ -128,8 +131,8 @@ Les tests couvrent les schemas de configuration, les priorites comportementales,
 
 ## Limites scientifiques
 
-- Le monde par defaut reste un espace 2D simplifie; obstacles et zones sont des extensions sandbox configurables.
-- Les obstacles, zones, saisons, maladies et mutations sont disponibles comme extensions sandbox, mais restent des modeles abstraits.
+- Le monde par defaut reste un espace 2D simplifie; topologie, obstacles et zones sont des extensions sandbox configurables.
+- Topologie, obstacles, zones, saisons, maladies et mutations sont disponibles comme extensions sandbox, mais restent des modeles abstraits.
 - La perception utilise distance et angle, sans occlusion.
 - L'energie, la reproduction et la predation sont volontairement abstraites.
 - Les resultats sont qualitatifs et doivent etre interpretes avec plusieurs repetitions et seeds controlees.
