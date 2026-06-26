@@ -40,6 +40,7 @@ def run_repetition_results(
         run_preset = preset_with_seed(preset, base_seed + repetition)
         world = World(run_preset)
         collector = MetricsCollector(window_seconds=run_preset.simulation.metrics_window_seconds)
+        collector.record_events(world.events)
         collector.sample(world, force=True)
         fixed_dt = run_preset.simulation.fixed_dt
         while world.time < duration:

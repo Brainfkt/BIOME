@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from biome_lab.config.defaults import create_default_preset
-from biome_lab.config.schemas import BiomeLabPreset
+from biome_lab.config.schemas import BiomeLabPreset, WorldState
 from biome_lab.metrics.collector import MetricsCollector
 from biome_lab.simulation.events import SimulationEvent
 from biome_lab.simulation.world import World
@@ -14,6 +14,7 @@ class SimulationEngine:
         self.preset = preset or create_default_preset()
         self.world = World(self.preset)
         self.metrics = MetricsCollector(window_seconds=self.preset.simulation.metrics_window_seconds)
+        self.metrics.record_events(self.world.events)
         self.metrics.sample(self.world, force=True)
         self.paused = True
         self.speed_multiplier = 1.0
@@ -25,6 +26,15 @@ class SimulationEngine:
             self.preset = preset
         self.world = World(self.preset)
         self.metrics = MetricsCollector(window_seconds=self.preset.simulation.metrics_window_seconds)
+        self.metrics.record_events(self.world.events)
+        self.metrics.sample(self.world, force=True)
+        self._accumulator = 0.0
+
+    def reset_from_world_state(self, state: WorldState) -> None:
+        self.preset = state.preset
+        self.world = World.from_world_state(state)
+        self.metrics = MetricsCollector(window_seconds=self.preset.simulation.metrics_window_seconds)
+        self.metrics.record_events(self.world.events)
         self.metrics.sample(self.world, force=True)
         self._accumulator = 0.0
 

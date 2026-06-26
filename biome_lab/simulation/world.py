@@ -9,8 +9,17 @@ from biome_lab.behavior.herbivore_policy import HerbivorePolicy
 from biome_lab.behavior.perception import PerceptionSystem
 from biome_lab.behavior.predator_policy import PredatorPolicy
 from biome_lab.behavior.steering import EPSILON, clamp_magnitude, length, normalize
-from biome_lab.config.schemas import BiomeLabPreset, CreatureTraits, ObstacleConfig
-from biome_lab.entities.creatures import Creature
+from biome_lab.config.schemas import (
+    BiomeLabPreset,
+    CreatureState,
+    CreatureTraits,
+    ObstacleConfig,
+    PlantState,
+    WorldState,
+    WorldSystemsState,
+    WorldTopologyState,
+)
+from biome_lab.entities.creatures import BehaviorState, Creature
 from biome_lab.entities.herbivores import Herbivore
 from biome_lab.entities.plants import Plant
 from biome_lab.entities.predators import Predator
@@ -37,6 +46,7 @@ class World:
         self.zones = list(self.config.environment.zones)
         self.topology_grid = self._build_topology_grid()
         self.events: List[SimulationEvent] = []
+        self.last_spawn_error: Optional[str] = None
         self.perception = PerceptionSystem()
         self.herbivore_policy = HerbivorePolicy()
         self.predator_policy = PredatorPolicy()
@@ -61,13 +71,14 @@ class World:
         self.zones = list(self.config.environment.zones)
         self.topology_grid = self._build_topology_grid()
         self.events = []
+        self.last_spawn_error = None
         for _ in range(self.config.plant.initial_count):
             self.spawn_plant()
         for _ in range(self.config.initial_herbivores):
             self.spawn_creature("herbivore", initial=True)
         for _ in range(self.config.initial_predators):
             self.spawn_creature("predator", initial=True)
-        self._seed_initial_infections()
+        self.events.extend(self._seed_initial_infections())
         self._refresh_indices()
 
     def next_id(self) -> int:
@@ -188,7 +199,159 @@ class World:
     def refresh_indices(self) -> None:
         self._refresh_indices()
 
-    def set_system_enabled(self, system: str, enabled: bool, preferred_id: Optional[int] = None) -> None:
+    @classmethod
+    def from_world_state(cls, state: WorldState) -> "World":
+        if not isinstance(state, WorldState):
+            state = WorldState.model_validate(state)
+        world = cls(state.preset)
+        world.time = state.time
+        world._plant_regrowth_credit = state.plant_regrowth_credit
+        world.obstacles = list(state.obstacles)
+        world.zones = list(state.zones)
+        world.config.environment.obstacles = list(state.obstacles)
+        world.config.environment.zones = list(state.zones)
+        world.config.topology.enabled = state.systems.topology
+        world.config.seasons.enabled = state.systems.seasons
+        world.config.disease.enabled = state.systems.disease
+        world.config.mutation.enabled = state.systems.mutation
+        world.config.topology.palette = state.topology.palette
+        world.topology_grid = np.array(state.topology.grid, dtype=float)
+        world.plants = [
+            Plant(
+                id=plant.id,
+                position=np.array(plant.position, dtype=float),
+                radius=plant.radius,
+                kind="plant",
+                energy=plant.energy,
+                alive=plant.alive,
+            )
+            for plant in state.plants
+        ]
+        world.herbivores = []
+        world.predators = []
+        for creature_state in state.creatures:
+            creature = world._creature_from_state(creature_state)
+            if creature.kind == "herbivore":
+                world.herbivores.append(creature)
+            else:
+                world.predators.append(creature)
+        max_loaded_id = max(
+            [0]
+            + [plant.id for plant in world.plants]
+            + [creature.id for creature in world.iter_creatures()]
+        )
+        world._id_counter = max(state.id_counter, max_loaded_id)
+        world.rng = create_rng(world.config.seed)
+        world.rng.bit_generator.state = state.rng_state
+        world.events = []
+        world.last_spawn_error = None
+        world._refresh_indices()
+        return world
+
+    def to_world_state(self) -> WorldState:
+        preset = self.preset.model_copy(deep=True)
+        preset.simulation.environment.obstacles = list(self.obstacles)
+        preset.simulation.environment.zones = list(self.zones)
+        preset.simulation.topology.enabled = self.config.topology.enabled
+        preset.simulation.topology.palette = self.config.topology.palette
+        preset.simulation.seasons.enabled = self.config.seasons.enabled
+        preset.simulation.disease.enabled = self.config.disease.enabled
+        preset.simulation.mutation.enabled = self.config.mutation.enabled
+        return WorldState(
+            preset=preset,
+            time=self.time,
+            id_counter=self._id_counter,
+            plant_regrowth_credit=self._plant_regrowth_credit,
+            rng_state=self.rng.bit_generator.state,
+            systems=WorldSystemsState(
+                topology=self.config.topology.enabled,
+                seasons=self.config.seasons.enabled,
+                disease=self.config.disease.enabled,
+                mutation=self.config.mutation.enabled,
+            ),
+            plants=[
+                PlantState(
+                    id=plant.id,
+                    position=(float(plant.position[0]), float(plant.position[1])),
+                    radius=plant.radius,
+                    energy=plant.energy,
+                    alive=plant.alive,
+                )
+                for plant in self.plants
+            ],
+            creatures=[
+                CreatureState(
+                    id=creature.id,
+                    species=creature.kind,
+                    position=(float(creature.position[0]), float(creature.position[1])),
+                    radius=creature.radius,
+                    traits=creature.traits,
+                    velocity=(float(creature.velocity[0]), float(creature.velocity[1])),
+                    heading=(float(creature.heading[0]), float(creature.heading[1])),
+                    energy=creature.energy,
+                    age=creature.age,
+                    birth_time=creature.birth_time,
+                    reproduction_cooldown_remaining=creature.reproduction_cooldown_remaining,
+                    behavior=creature.behavior.value,
+                    target_id=creature.target_id,
+                    disease_state=creature.disease_state,
+                    infection_timer=creature.infection_timer,
+                    generation=creature.generation,
+                    mutation_count=creature.mutation_count,
+                    alive=creature.alive,
+                )
+                for creature in self.iter_creatures()
+            ],
+            obstacles=list(self.obstacles),
+            zones=list(self.zones),
+            topology=WorldTopologyState(
+                enabled=self.config.topology.enabled,
+                palette=self.config.topology.palette,
+                grid=self.topology_grid.tolist(),
+            ),
+        )
+
+    def _creature_from_state(self, state: CreatureState) -> Creature:
+        kwargs = {
+            "id": state.id,
+            "position": np.array(state.position, dtype=float),
+            "radius": state.radius,
+            "kind": state.species,
+            "traits": state.traits,
+            "velocity": np.array(state.velocity, dtype=float),
+            "heading": np.array(state.heading, dtype=float),
+            "energy": state.energy,
+            "age": state.age,
+            "birth_time": state.birth_time,
+            "reproduction_cooldown_remaining": state.reproduction_cooldown_remaining,
+            "behavior": BehaviorState(state.behavior),
+            "target_id": state.target_id,
+            "disease_state": state.disease_state,
+            "infection_timer": state.infection_timer,
+            "generation": state.generation,
+            "mutation_count": state.mutation_count,
+            "alive": state.alive,
+        }
+        if state.species == "herbivore":
+            return Herbivore(**kwargs)
+        return Predator(**kwargs)
+
+    def set_system_enabled(
+        self,
+        system: str,
+        enabled: bool,
+        preferred_id: Optional[int] = None,
+    ) -> List[SimulationEvent]:
+        events = [
+            SimulationEvent(
+                time=self.time,
+                kind=EventKind.SYSTEM_TOGGLE,
+                species="system",
+                entity_id=0,
+                system=system,
+                enabled=enabled,
+            )
+        ]
         if system == "topology":
             self.config.topology.enabled = enabled
         elif system == "seasons":
@@ -196,31 +359,49 @@ class World:
         elif system == "disease":
             self.config.disease.enabled = enabled
             if enabled:
-                self.seed_infections(max(1, self.config.disease.initial_infected), preferred_id=preferred_id)
+                events.extend(
+                    self.seed_infections(
+                        max(1, self.config.disease.initial_infected),
+                        preferred_id=preferred_id,
+                    )
+                )
         elif system == "mutation":
             self.config.mutation.enabled = enabled
         else:
             raise ValueError("unknown configurable system: %s" % system)
+        self.events.extend(events)
+        return events
 
-    def seed_infections(self, count: int = 1, preferred_id: Optional[int] = None) -> int:
+    def seed_infections(
+        self,
+        count: int = 1,
+        preferred_id: Optional[int] = None,
+    ) -> List[SimulationEvent]:
         if count <= 0:
-            return 0
+            return []
         susceptible = [
             creature
             for creature in self.iter_living_creatures()
             if creature.disease_state == "susceptible"
         ]
         if not susceptible:
-            return 0
-        infected = 0
+            return []
+        events: List[SimulationEvent] = []
         if preferred_id is not None:
             preferred = next((creature for creature in susceptible if creature.id == preferred_id), None)
             if preferred is not None:
                 preferred.disease_state = "infected"
                 preferred.infection_timer = 0.0
                 susceptible.remove(preferred)
-                infected += 1
-        remaining = max(0, count - infected)
+                events.append(
+                    SimulationEvent(
+                        time=self.time,
+                        kind=EventKind.INITIAL_INFECTION,
+                        species=preferred.kind,
+                        entity_id=preferred.id,
+                    )
+                )
+        remaining = max(0, count - len(events))
         if remaining > 0 and susceptible:
             take = min(remaining, len(susceptible))
             indices = self.rng.choice(len(susceptible), size=take, replace=False)
@@ -228,8 +409,15 @@ class World:
                 creature = susceptible[int(index)]
                 creature.disease_state = "infected"
                 creature.infection_timer = 0.0
-                infected += 1
-        return infected
+                events.append(
+                    SimulationEvent(
+                        time=self.time,
+                        kind=EventKind.INITIAL_INFECTION,
+                        species=creature.kind,
+                        entity_id=creature.id,
+                    )
+                )
+        return events
 
     def add_obstacle_rect(
         self,
@@ -308,9 +496,18 @@ class World:
             },
         }
 
-    def spawn_plant(self, position: Optional[np.ndarray] = None) -> Plant:
+    def spawn_plant(self, position: Optional[np.ndarray] = None) -> Optional[Plant]:
         if position is None:
             position = self._random_free_position(self.config.plant.radius)
+        if position is None:
+            self.last_spawn_error = "no free position available for plant"
+            return None
+        if not self._position_in_bounds(position, self.config.plant.radius):
+            self.last_spawn_error = "plant spawn position is outside world bounds"
+            return None
+        if self._position_blocked(position, self.config.plant.radius):
+            self.last_spawn_error = "plant spawn position is blocked by an obstacle"
+            return None
         plant = Plant(
             id=self.next_id(),
             position=position,
@@ -319,6 +516,7 @@ class World:
             energy=self.config.plant.energy,
         )
         self.plants.append(plant)
+        self.last_spawn_error = None
         return plant
 
     def spawn_creature(
@@ -330,7 +528,10 @@ class World:
         traits_override: Optional[CreatureTraits] = None,
         generation: int = 0,
         mutation_count: int = 0,
-    ) -> Creature:
+    ) -> Optional[Creature]:
+        if self.living_creature_count() >= self.config.max_creatures:
+            self.last_spawn_error = "max_creatures limit reached"
+            return None
         if species == "herbivore":
             traits = traits_override or self.preset.herbivore
             radius = self.config.herbivore_radius
@@ -341,6 +542,15 @@ class World:
             raise ValueError("unknown creature species: %s" % species)
         if position is None:
             position = self._random_free_position(radius)
+        if position is None:
+            self.last_spawn_error = "no free position available for %s" % species
+            return None
+        if not self._position_in_bounds(position, radius):
+            self.last_spawn_error = "%s spawn position is outside world bounds" % species
+            return None
+        if self._position_blocked(position, radius):
+            self.last_spawn_error = "%s spawn position is blocked by an obstacle" % species
+            return None
         if initial_energy is None:
             low_fraction = self.config.initial_energy_min_fraction if initial else self.config.birth_energy_min_fraction
             high_fraction = self.config.initial_energy_max_fraction if initial else self.config.birth_energy_max_fraction
@@ -366,6 +576,7 @@ class World:
         else:
             creature = Predator(**kwargs)
             self.predators.append(creature)
+        self.last_spawn_error = None
         return creature
 
     def update(self, dt: float) -> List[SimulationEvent]:
@@ -410,11 +621,11 @@ class World:
                     events.append(event)
         return events
 
-    def _seed_initial_infections(self) -> None:
+    def _seed_initial_infections(self) -> List[SimulationEvent]:
         disease = self.config.disease
         if not disease.enabled or disease.initial_infected <= 0:
-            return
-        self.seed_infections(disease.initial_infected)
+            return []
+        return self.seed_infections(disease.initial_infected)
 
     def _update_disease(self, dt: float) -> List[SimulationEvent]:
         disease = self.config.disease
@@ -611,8 +822,6 @@ class World:
         if bounded[1] < 0.0 or bounded[1] > height:
             bounded[1] = float(np.clip(bounded[1], 0.0, height))
             adjusted_velocity[1] *= -self.config.boundary_bounce
-        if dt > 0.0 and np.any(bounded != new_position):
-            adjusted_velocity = (bounded - old_position) / dt
         return bounded, adjusted_velocity
 
     def _apply_obstacles(
@@ -626,7 +835,7 @@ class World:
             return old_position, np.zeros(2, dtype=float)
         return new_position, velocity
 
-    def _random_free_position(self, radius: float) -> np.ndarray:
+    def _random_free_position(self, radius: float) -> Optional[np.ndarray]:
         for _ in range(100):
             position = random_position(
                 self.rng,
@@ -634,13 +843,14 @@ class World:
                 self.config.world_height,
                 padding=radius,
             )
-            if not self._position_blocked(position, radius):
+            if self._position_in_bounds(position, radius) and not self._position_blocked(position, radius):
                 return position
-        return random_position(
-            self.rng,
-            self.config.world_width,
-            self.config.world_height,
-            padding=radius,
+        return None
+
+    def _position_in_bounds(self, position: np.ndarray, radius: float) -> bool:
+        return (
+            radius <= float(position[0]) <= self.config.world_width - radius
+            and radius <= float(position[1]) <= self.config.world_height - radius
         )
 
     def _position_blocked(self, position: np.ndarray, radius: float) -> bool:
@@ -851,8 +1061,6 @@ class World:
             return []
         if self.living_creature_count() >= self.config.max_creatures:
             return []
-        parent.energy -= parent.traits.reproduction_cost
-        parent.reproduction_cooldown_remaining = parent.traits.reproduction_cooldown
         child_energy = min(parent.traits.max_energy * 0.50, parent.traits.reproduction_cost)
         child_position = jittered_position(
             self.rng,
@@ -860,8 +1068,11 @@ class World:
             radius=self.config.reproduction_spawn_radius,
             bounds=(self.config.world_width, self.config.world_height),
         )
-        if self._position_blocked(child_position, parent.radius):
+        if not self._position_in_bounds(child_position, parent.radius) or self._position_blocked(child_position, parent.radius):
             child_position = self._random_free_position(parent.radius)
+        if child_position is None:
+            self.last_spawn_error = "no free position available for child"
+            return []
         child_traits, mutated = self._child_traits(parent)
         child = self.spawn_creature(
             parent.kind,
@@ -872,6 +1083,10 @@ class World:
             generation=parent.generation + 1,
             mutation_count=parent.mutation_count + (1 if mutated else 0),
         )
+        if child is None:
+            return []
+        parent.energy -= parent.traits.reproduction_cost
+        parent.reproduction_cooldown_remaining = parent.traits.reproduction_cooldown
         return [
             SimulationEvent(
                 time=self.time,
@@ -919,9 +1134,12 @@ class World:
         spawn_count = min(int(self._plant_regrowth_credit), capacity)
         if spawn_count <= 0:
             return
-        self._plant_regrowth_credit -= spawn_count
+        spawned = 0
         for _ in range(spawn_count):
-            self.spawn_plant()
+            if self.spawn_plant() is None:
+                break
+            spawned += 1
+        self._plant_regrowth_credit -= spawned
 
     def _refresh_indices(
         self,
