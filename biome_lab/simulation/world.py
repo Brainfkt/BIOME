@@ -660,7 +660,60 @@ class World:
             multiplier *= zone.movement_cost_multiplier
         if season is not None:
             multiplier *= season.movement_cost_multiplier
+        multiplier *= self._topology_movement_cost_multiplier_at(position)
         return multiplier
+
+    def _build_topology_grid(self) -> np.ndarray:
+        topology = self.config.topology
+        grid = np.full(
+            (topology.grid_rows, topology.grid_columns),
+            topology.base_elevation,
+            dtype=float,
+        )
+        if not topology.features:
+            return np.clip(grid, 0.0, 1.0)
+
+        xs = np.linspace(0.0, self.config.world_width, topology.grid_columns)
+        ys = np.linspace(0.0, self.config.world_height, topology.grid_rows)
+        grid_x, grid_y = np.meshgrid(xs, ys)
+        for feature in topology.features:
+            angle = float(np.deg2rad(feature.orientation_deg))
+            cos_angle = float(np.cos(angle))
+            sin_angle = float(np.sin(angle))
+            dx = grid_x - feature.x
+            dy = grid_y - feature.y
+            along = dx * cos_angle + dy * sin_angle
+            across = -dx * sin_angle + dy * cos_angle
+            length_scale = max(feature.length / 2.0, 1.0)
+            width_scale = max(feature.width / 2.0, 1.0)
+            influence = np.exp(
+                -(
+                    (along ** 2) / (2.0 * length_scale ** 2)
+                    + (across ** 2) / (2.0 * width_scale ** 2)
+                )
+            )
+            if feature.kind in ("valley", "basin"):
+                grid -= influence * feature.strength
+            elif feature.kind in ("ridge", "hill"):
+                grid += influence * feature.strength
+        return np.clip(grid, 0.0, 1.0)
+
+    def _topology_slope_at(self, position: np.ndarray) -> float:
+        if not self.config.topology.enabled:
+            return 0.0
+        rows, columns = self.topology_grid.shape
+        x_index = int(np.clip(position[0] / max(float(self.config.world_width), 1.0) * (columns - 1), 0, columns - 1))
+        y_index = int(np.clip(position[1] / max(float(self.config.world_height), 1.0) * (rows - 1), 0, rows - 1))
+        left = self.topology_grid[y_index, max(0, x_index - 1)]
+        right = self.topology_grid[y_index, min(columns - 1, x_index + 1)]
+        up = self.topology_grid[max(0, y_index - 1), x_index]
+        down = self.topology_grid[min(rows - 1, y_index + 1), x_index]
+        return float(np.sqrt((right - left) ** 2 + (down - up) ** 2))
+
+    def _topology_movement_cost_multiplier_at(self, position: np.ndarray) -> float:
+        if not self.config.topology.enabled:
+            return 1.0
+        return 1.0 + self._topology_slope_at(position) * self.config.topology.movement_cost_per_slope
 
     def _plant_regrowth_multiplier(self) -> float:
         season = self._season_phase()
