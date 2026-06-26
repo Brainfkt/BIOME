@@ -74,6 +74,31 @@ PARAMETER_DOCS: Dict[str, Dict[str, str]] = {
         "role": "Relie alimentation, survie et reproduction.",
         "expected_effect": "Un gain eleve favorise la survie et la reproduction.",
     },
+    "environment.zones": {
+        "definition": "Zones rectangulaires qui modifient localement vitesse, cout energetique, repousse ou transmission.",
+        "role": "Modele des heterogeneites spatiales comme biomes, refuges ou zones hostiles.",
+        "expected_effect": "Des zones favorables concentrent les populations; des zones couteuses fragmentent les trajectoires.",
+    },
+    "environment.obstacles": {
+        "definition": "Rectangles bloquants que les creatures ne peuvent pas traverser.",
+        "role": "Ajoute une structure spatiale au monde et perturbe les lignes de poursuite.",
+        "expected_effect": "Les obstacles reduisent certaines rencontres et peuvent creer des refuges.",
+    },
+    "seasons": {
+        "definition": "Cycle temporel modifiant repousse, metabolisme, cout de mouvement et transmission.",
+        "role": "Introduit une contrainte periodique sur l'ecosysteme.",
+        "expected_effect": "Les saisons defavorables augmentent famine, extinction locale ou propagation de maladie.",
+    },
+    "disease": {
+        "definition": "Modele epidemiologique simple avec infection par proximite, cout energetique et guerison.",
+        "role": "Ajoute une pression sanitaire dependante de la densite et de la mobilite.",
+        "expected_effect": "Une transmission elevee penalise les populations denses et accelere les effondrements.",
+    },
+    "mutation": {
+        "definition": "Variation hereditaire aleatoire de certains traits au moment de la reproduction.",
+        "role": "Modele une derive evolutive simplifiee sous contraintes ecologiques.",
+        "expected_effect": "Des mutations fortes augmentent la diversite mais peuvent destabiliser la population.",
+    },
 }
 
 
@@ -81,4 +106,3 @@ METRIC_DOC_INTRO = (
     "Chaque metrique est definie pour expliquer une dynamique ecologique precise. "
     "Les metriques sans interpretation scientifique directe sont exclues."
 )
-

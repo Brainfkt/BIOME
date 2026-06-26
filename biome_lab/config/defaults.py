@@ -3,9 +3,14 @@ from __future__ import annotations
 from biome_lab.config.schemas import (
     BiomeLabPreset,
     CreatureTraits,
+    DiseaseConfig,
+    EnvironmentConfig,
     ExperimentProtocol,
+    MutationConfig,
     PlantConfig,
     ScientificCard,
+    SeasonConfig,
+    SeasonPhaseConfig,
     SimulationConfig,
 )
 
@@ -128,6 +133,47 @@ def create_default_preset() -> BiomeLabPreset:
             energy=22.0,
             regrowth_per_second=2.0,
         ),
+        environment=EnvironmentConfig(),
+        seasons=SeasonConfig(
+            enabled=False,
+            cycle_seconds=180.0,
+            phases=[
+                SeasonPhaseConfig(
+                    name="printemps",
+                    duration_fraction=0.30,
+                    plant_regrowth_multiplier=1.35,
+                    metabolism_multiplier=0.95,
+                    movement_cost_multiplier=0.95,
+                    disease_transmission_multiplier=1.00,
+                ),
+                SeasonPhaseConfig(
+                    name="ete",
+                    duration_fraction=0.30,
+                    plant_regrowth_multiplier=1.05,
+                    metabolism_multiplier=1.00,
+                    movement_cost_multiplier=1.00,
+                    disease_transmission_multiplier=1.10,
+                ),
+                SeasonPhaseConfig(
+                    name="automne",
+                    duration_fraction=0.20,
+                    plant_regrowth_multiplier=0.80,
+                    metabolism_multiplier=1.05,
+                    movement_cost_multiplier=1.05,
+                    disease_transmission_multiplier=1.00,
+                ),
+                SeasonPhaseConfig(
+                    name="hiver",
+                    duration_fraction=0.20,
+                    plant_regrowth_multiplier=0.45,
+                    metabolism_multiplier=1.15,
+                    movement_cost_multiplier=1.10,
+                    disease_transmission_multiplier=0.85,
+                ),
+            ],
+        ),
+        disease=DiseaseConfig(enabled=False),
+        mutation=MutationConfig(enabled=False),
     )
     protocol = ExperimentProtocol(
         research_question=(
@@ -159,10 +205,10 @@ def create_default_preset() -> BiomeLabPreset:
         notes="Preset qualitatif de depart pour observer cycles predateur-proie-ressource.",
     )
     return BiomeLabPreset(
+        schema_version=1,
         name="default_predator_prey_resource",
         simulation=simulation,
         herbivore=herbivore,
         predator=predator,
         protocol=protocol,
     )
-

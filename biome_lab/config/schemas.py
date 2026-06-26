@@ -85,6 +85,114 @@ class PlantConfig(BaseModel):
         return self
 
 
+class ObstacleConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = "obstacle"
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    blocks_movement: bool = True
+
+
+class EnvironmentZoneConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = "zone"
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    color: Color = (70, 106, 124)
+    speed_multiplier: float = Field(gt=0)
+    metabolism_multiplier: float = Field(gt=0)
+    movement_cost_multiplier: float = Field(gt=0)
+    plant_regrowth_multiplier: float = Field(ge=0)
+    disease_transmission_multiplier: float = Field(ge=0)
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: Color) -> Color:
+        if len(value) != 3:
+            raise ValueError("color must contain exactly three RGB channels")
+        if any(channel < 0 or channel > 255 for channel in value):
+            raise ValueError("color channels must be between 0 and 255")
+        return value
+
+
+class EnvironmentConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    obstacles: List[ObstacleConfig] = Field(default_factory=list)
+    zones: List[EnvironmentZoneConfig] = Field(default_factory=list)
+
+
+class SeasonPhaseConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    duration_fraction: float = Field(gt=0)
+    plant_regrowth_multiplier: float = Field(ge=0)
+    metabolism_multiplier: float = Field(gt=0)
+    movement_cost_multiplier: float = Field(gt=0)
+    disease_transmission_multiplier: float = Field(ge=0)
+
+
+class SeasonConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    cycle_seconds: float = Field(default=120.0, gt=0)
+    phases: List[SeasonPhaseConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_phases(self) -> "SeasonConfig":
+        if self.enabled and not self.phases:
+            raise ValueError("enabled seasons require at least one phase")
+        if self.phases and sum(phase.duration_fraction for phase in self.phases) <= 0.0:
+            raise ValueError("season phase durations must sum to a positive value")
+        return self
+
+
+class DiseaseConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    initial_infected: int = Field(default=0, ge=0)
+    transmission_radius: float = Field(default=18.0, gt=0)
+    transmission_probability_per_second: float = Field(default=0.05, ge=0)
+    energy_drain_per_second: float = Field(default=0.2, ge=0)
+    mortality_probability_per_second: float = Field(default=0.0, ge=0)
+    recovery_seconds: float = Field(default=30.0, gt=0)
+
+
+class MutationConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    probability: float = Field(default=0.03, ge=0, le=1)
+    strength: float = Field(default=0.08, ge=0, le=1)
+    min_trait_multiplier: float = Field(default=0.5, gt=0)
+    max_trait_multiplier: float = Field(default=1.5, gt=0)
+    mutable_traits: List[str] = Field(
+        default_factory=lambda: [
+            "max_speed",
+            "vision_range",
+            "vision_angle_deg",
+            "basal_metabolism",
+            "movement_energy_cost",
+            "food_energy_gain",
+        ]
+    )
+
+    @model_validator(mode="after")
+    def validate_trait_bounds(self) -> "MutationConfig":
+        if self.min_trait_multiplier > self.max_trait_multiplier:
+            raise ValueError("min_trait_multiplier cannot exceed max_trait_multiplier")
+        return self
+
+
 class SimulationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -98,6 +206,29 @@ class SimulationConfig(BaseModel):
     metrics_window_seconds: float = Field(gt=0)
     seed: int
     plant: PlantConfig
+    environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
+    seasons: SeasonConfig = Field(default_factory=SeasonConfig)
+    disease: DiseaseConfig = Field(default_factory=DiseaseConfig)
+    mutation: MutationConfig = Field(default_factory=MutationConfig)
+    herbivore_radius: float = Field(default=6.0, gt=0)
+    predator_radius: float = Field(default=7.5, gt=0)
+    creature_turn_rate_deg: float = Field(default=220.0, gt=0)
+    boundary_bounce: float = Field(default=0.45, ge=0, le=1)
+    plant_interaction_margin: float = Field(default=2.0, ge=0)
+    predator_attack_margin: float = Field(default=6.0, ge=0)
+    reproduction_spawn_radius: float = Field(default=18.0, ge=0)
+    initial_energy_min_fraction: float = Field(default=0.55, ge=0, le=1)
+    initial_energy_max_fraction: float = Field(default=0.88, ge=0, le=1)
+    birth_energy_min_fraction: float = Field(default=0.35, ge=0, le=1)
+    birth_energy_max_fraction: float = Field(default=0.55, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_energy_fractions(self) -> "SimulationConfig":
+        if self.initial_energy_min_fraction > self.initial_energy_max_fraction:
+            raise ValueError("initial_energy_min_fraction cannot exceed initial_energy_max_fraction")
+        if self.birth_energy_min_fraction > self.birth_energy_max_fraction:
+            raise ValueError("birth_energy_min_fraction cannot exceed birth_energy_max_fraction")
+        return self
 
 
 class ExperimentProtocol(BaseModel):
@@ -117,6 +248,7 @@ class ExperimentProtocol(BaseModel):
 class BiomeLabPreset(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: int = 1
     name: str
     simulation: SimulationConfig
     herbivore: CreatureTraits
@@ -133,4 +265,3 @@ class BiomeLabPreset(BaseModel):
     def save_json(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self.to_json(), encoding="utf-8")
-
