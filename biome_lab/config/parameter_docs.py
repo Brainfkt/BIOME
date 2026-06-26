@@ -89,6 +89,11 @@ PARAMETER_DOCS: Dict[str, Dict[str, str]] = {
         "role": "Ajoute une structure topographique modifiable dans le sandbox.",
         "expected_effect": "Une carte plus rugueuse augmente les couts de deplacement sur les pentes et canalise les trajectoires.",
     },
+    "topology.palette": {
+        "definition": "Palette de couleurs utilisee pour representer visuellement l'elevation du terrain.",
+        "role": "Adapte la lecture du relief au contexte pedagogique ou esthetique.",
+        "expected_effect": "Aucun effet dynamique; seule la perception visuelle de la carte change.",
+    },
     "seasons": {
         "definition": "Cycle temporel modifiant repousse, metabolisme, cout de mouvement et transmission.",
         "role": "Introduit une contrainte periodique sur l'ecosysteme.",

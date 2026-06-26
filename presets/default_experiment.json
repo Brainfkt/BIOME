@@ -24,6 +24,7 @@
     },
     "topology": {
       "enabled": false,
+      "palette": "natural",
       "grid_columns": 80,
       "grid_rows": 54,
       "base_elevation": 0.5,

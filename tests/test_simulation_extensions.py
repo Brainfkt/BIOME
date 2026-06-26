@@ -112,6 +112,7 @@ def test_sandbox_topology_brush_carves_and_exports_relief() -> None:
     world = World(create_default_preset())
     center = np.array([280.0, 220.0])
     before = world.sample_elevation(center)
+    world.config.topology.palette = "hydrology"
 
     world.apply_topology_brush(center, radius=80.0, strength=0.2, mode="valley")
     after = world.sample_elevation(center)
@@ -120,4 +121,21 @@ def test_sandbox_topology_brush_carves_and_exports_relief() -> None:
     assert world.topology_enabled()
     assert after < before
     assert "topology" in state
+    assert state["topology"]["palette"] == "hydrology"
     assert state["topology"]["summary"]["min_elevation"] <= after
+
+
+def test_runtime_settings_toggle_experimental_systems() -> None:
+    world = World(create_default_preset())
+    creature = world.herbivores[0]
+
+    world.set_system_enabled("topology", True)
+    world.set_system_enabled("seasons", True)
+    world.set_system_enabled("mutation", True)
+    world.set_system_enabled("disease", True, preferred_id=creature.id)
+
+    assert world.config.topology.enabled
+    assert world.config.seasons.enabled
+    assert world.config.mutation.enabled
+    assert world.config.disease.enabled
+    assert creature.disease_state == "infected"
