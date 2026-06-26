@@ -74,7 +74,7 @@ def flee_from(current: np.ndarray, threats: Iterable[object], max_speed: float) 
     combined_x = 0.0
     combined_y = 0.0
     for threat in threats:
-        threat_position = getattr(threat, "position")
+        threat_position = threat.position
         delta_x = current_x - float(threat_position[0])
         delta_y = current_y - float(threat_position[1])
         distance_sq = max(delta_x * delta_x + delta_y * delta_y, EPSILON_SQ)
