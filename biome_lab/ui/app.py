@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -8,7 +7,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pygame
 
-from biome_lab.config.schemas import BiomeLabPreset
+from biome_lab.config.schemas import BiomeLabPreset, WorldState
 from biome_lab.exports.service import ExportService
 from biome_lab.rendering import colors
 from biome_lab.rendering.renderer import Renderer
@@ -41,7 +40,14 @@ class BiomeLabApp:
         self._panning = False
         self.buttons: List[Button] = []
         self.export_message = ""
+        self.last_state_path: Optional[Path] = None
         self.running = True
+
+    def load_world_state(self, state: WorldState) -> None:
+        self.engine.reset_from_world_state(state)
+        self.selected_id = None
+        self._reset_camera()
+        self.export_message = "Loaded world_state"
 
     def run(self) -> None:
         while self.running:
@@ -115,6 +121,8 @@ class BiomeLabApp:
         self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "Export", self._export))
         x += 104
         self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "Save", self._save_sandbox_state))
+        x += 104
+        self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "Load", self._load_latest_sandbox_state))
         x += 104
         self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "View", self._reset_camera))
 
@@ -196,6 +204,8 @@ class BiomeLabApp:
                     self._toggle_system("mutation")
                 elif event.key == pygame.K_p:
                     self._cycle_terrain_palette()
+                elif event.key == pygame.K_l:
+                    self._load_latest_sandbox_state()
             if event.type == pygame.MOUSEWHEEL and layout["world"].collidepoint(pygame.mouse.get_pos()):
                 self._zoom_camera(event.y)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button in (2, 3):
@@ -232,16 +242,25 @@ class BiomeLabApp:
         if tool == SandboxTool.SELECT:
             self._select_at(pos, world_rect)
         elif tool == SandboxTool.ADD_PLANT:
-            world.spawn_plant(world_pos)
-            world.refresh_indices()
+            plant = world.spawn_plant(world_pos)
+            if plant is None:
+                self.export_message = world.last_spawn_error or "Plant spawn failed"
+            else:
+                world.refresh_indices()
         elif tool == SandboxTool.ADD_HERBIVORE:
             creature = world.spawn_creature("herbivore", world_pos, initial=True)
-            self.selected_id = creature.id
-            world.refresh_indices()
+            if creature is None:
+                self.export_message = world.last_spawn_error or "Herbivore spawn failed"
+            else:
+                self.selected_id = creature.id
+                world.refresh_indices()
         elif tool == SandboxTool.ADD_PREDATOR:
             creature = world.spawn_creature("predator", world_pos, initial=True)
-            self.selected_id = creature.id
-            world.refresh_indices()
+            if creature is None:
+                self.export_message = world.last_spawn_error or "Predator spawn failed"
+            else:
+                self.selected_id = creature.id
+                world.refresh_indices()
         elif tool == SandboxTool.ADD_OBSTACLE:
             world.add_obstacle_rect(
                 world_pos,
@@ -319,7 +338,8 @@ class BiomeLabApp:
     def _toggle_system(self, system: str) -> None:
         enabled = not self._system_enabled(system)
         preferred_id = self.selected_id if system == "disease" else None
-        self.engine.world.set_system_enabled(system, enabled, preferred_id=preferred_id)
+        events = self.engine.world.set_system_enabled(system, enabled, preferred_id=preferred_id)
+        self.engine.metrics.record_events(events)
         self.export_message = "%s: %s" % (system, "on" if enabled else "off")
 
     def _cycle_terrain_palette(self) -> None:
@@ -350,12 +370,29 @@ class BiomeLabApp:
         output_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = output_dir / ("%s_sandbox_state.json" % stamp)
-        payload = {
-            "preset": self.engine.preset.model_dump(mode="json"),
-            "world": self.engine.world.to_state_dict(),
-        }
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.engine.world.to_world_state().save_json(path)
+        self.last_state_path = path
         self.export_message = "Saved: %s" % path.name
+
+    def _load_latest_sandbox_state(self) -> None:
+        path = self.last_state_path
+        if path is None or not path.exists():
+            candidates = sorted(
+                Path("exports").glob("*_sandbox_state.json"),
+                key=lambda candidate: candidate.stat().st_mtime,
+                reverse=True,
+            )
+            path = candidates[0] if candidates else None
+        if path is None:
+            self.export_message = "Load failed: no sandbox state"
+            return
+        try:
+            state = WorldState.from_json_path(path)
+            self.load_world_state(state)
+            self.last_state_path = path
+            self.export_message = "Loaded: %s" % path.name
+        except Exception as exc:
+            self.export_message = "Load failed: %s" % exc
 
     def _draw(self, layout: Dict[str, pygame.Rect]) -> None:
         self.screen.fill(colors.BACKGROUND)
