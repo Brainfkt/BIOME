@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +36,31 @@ def test_headless_run_exports_json_and_csv(tmp_path) -> None:
     assert (output_dir / "events.csv").exists()
     assert (output_dir / "summary.csv").exists()
     assert (output_dir / "metadata.json").exists()
+
+
+def test_headless_run_can_disable_detailed_events(tmp_path) -> None:
+    args = argparse.Namespace(
+        preset=None,
+        output_dir=tmp_path,
+        duration=0.2,
+        repetitions=1,
+        seed=123,
+        no_events=True,
+    )
+
+    output_dir = run_headless(args)
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    with (output_dir / "events.csv").open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        header = next(reader)
+        rows = list(reader)
+
+    assert metadata["events_recorded"] is False
+    assert metadata["event_metrics_complete"] is False
+    assert metadata["event_export_mode"] == "disabled"
+    assert "kind" in header
+    assert rows == []
 
 
 def test_load_simulation_document_detects_world_state(tmp_path) -> None:

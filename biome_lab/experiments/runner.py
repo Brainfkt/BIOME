@@ -31,6 +31,7 @@ def run_repetition_results(
     duration_seconds: Optional[float] = None,
     repetitions: Optional[int] = None,
     seed: Optional[int] = None,
+    record_events: bool = True,
 ) -> List[RepetitionResult]:
     detailed_results: List[RepetitionResult] = []
     base_seed = preset.protocol.seed if seed is None else seed
@@ -40,12 +41,18 @@ def run_repetition_results(
         run_preset = preset_with_seed(preset, base_seed + repetition)
         world = World(run_preset)
         collector = MetricsCollector(window_seconds=run_preset.simulation.metrics_window_seconds)
-        collector.record_events(world.events)
+        if record_events:
+            collector.record_events(world.events)
+        else:
+            world.events.clear()
         collector.sample(world, force=True)
         fixed_dt = run_preset.simulation.fixed_dt
         while world.time < duration:
             events = world.update(fixed_dt)
-            collector.record_events(events)
+            if record_events:
+                collector.record_events(events)
+            else:
+                world.events.clear()
             collector.sample(world, interval_seconds=run_preset.simulation.metrics_sample_interval)
         collector.sample(world, force=True)
         detailed_results.append(

@@ -12,6 +12,25 @@ from biome_lab.config.schemas import BiomeLabPreset, WorldState
 
 
 LoadedDocument = Union[BiomeLabPreset, WorldState]
+EVENT_ROW_FIELDS = [
+    "repetition",
+    "seed",
+    "time",
+    "kind",
+    "species",
+    "entity_id",
+    "target_id",
+    "cause",
+    "energy",
+    "age",
+    "generation",
+    "mutation_count",
+    "system",
+    "enabled",
+    "mutation_trait",
+    "old_value",
+    "new_value",
+]
 
 
 def load_simulation_document(path: Optional[Path] = None) -> Tuple[str, LoadedDocument]:
@@ -56,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--duration", type=float, help="duree simulee en secondes")
     run_parser.add_argument("--repetitions", type=int, help="nombre de repetitions")
     run_parser.add_argument("--seed", type=int, help="seed de depart")
+    run_parser.add_argument("--no-events", action="store_true", help="ne pas conserver les evenements detailles")
 
     return parser
 
@@ -94,7 +114,12 @@ def _validate_run_overrides(args: argparse.Namespace) -> None:
         raise ValueError("--repetitions must be greater than 0")
 
 
-def _run_world_state_once(state: WorldState, duration_seconds: Optional[float], seed: Optional[int]):
+def _run_world_state_once(
+    state: WorldState,
+    duration_seconds: Optional[float],
+    seed: Optional[int],
+    record_events: bool = True,
+):
     from biome_lab.experiments.runner import RepetitionResult
     from biome_lab.metrics.collector import MetricsCollector
     from biome_lab.simulation.rng import create_rng
@@ -109,7 +134,10 @@ def _run_world_state_once(state: WorldState, duration_seconds: Optional[float], 
         world.config = run_preset.simulation
         world.rng = create_rng(seed)
     collector = MetricsCollector(window_seconds=world.preset.simulation.metrics_window_seconds)
-    collector.record_events(world.events)
+    if record_events:
+        collector.record_events(world.events)
+    else:
+        world.events.clear()
     collector.sample(world, force=True)
     if duration_seconds is None:
         target_time = max(world.time, world.preset.protocol.duration_seconds)
@@ -117,7 +145,10 @@ def _run_world_state_once(state: WorldState, duration_seconds: Optional[float], 
         target_time = world.time + duration_seconds
     while world.time < target_time:
         events = world.update(world.preset.simulation.fixed_dt)
-        collector.record_events(events)
+        if record_events:
+            collector.record_events(events)
+        else:
+            world.events.clear()
         collector.sample(world, interval_seconds=world.preset.simulation.metrics_sample_interval)
     collector.sample(world, force=True)
     return [
@@ -135,6 +166,7 @@ def run_headless(args: argparse.Namespace) -> Path:
     from biome_lab.exports.json_export import save_json_document, save_preset_json
 
     _validate_run_overrides(args)
+    record_events = not bool(getattr(args, "no_events", False))
     document_type, document = load_simulation_document(args.preset)
     if document_type == "world_state":
         if args.repetitions not in (None, 1):
@@ -146,7 +178,7 @@ def run_headless(args: argparse.Namespace) -> Path:
             preset.simulation.seed = args.seed
             preset.protocol.seed = args.seed
             document = document.model_copy(update={"preset": preset})
-        results = _run_world_state_once(document, args.duration, args.seed)
+        results = _run_world_state_once(document, args.duration, args.seed, record_events=record_events)
     else:
         assert isinstance(document, BiomeLabPreset)
         preset = document
@@ -155,6 +187,7 @@ def run_headless(args: argparse.Namespace) -> Path:
             duration_seconds=args.duration,
             repetitions=args.repetitions,
             seed=args.seed,
+            record_events=record_events,
         )
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -169,11 +202,12 @@ def run_headless(args: argparse.Namespace) -> Path:
             enriched["repetition"] = result.repetition
             enriched["seed"] = result.seed
             metrics_rows.append(enriched)
-        event_rows.extend(_event_rows(result.collector.events, result.repetition, result.seed))
+        if record_events:
+            event_rows.extend(_event_rows(result.collector.events, result.repetition, result.seed))
 
     save_preset_json(preset, output_dir / "preset.json")
     save_rows_csv(metrics_rows, output_dir / "metrics.csv")
-    save_rows_csv(event_rows, output_dir / "events.csv")
+    save_rows_csv(event_rows, output_dir / "events.csv", columns=EVENT_ROW_FIELDS)
     save_rows_csv(summarize_repetitions(results), output_dir / "summary.csv")
     save_json_document(
         {
@@ -182,6 +216,9 @@ def run_headless(args: argparse.Namespace) -> Path:
             "duration_seconds": args.duration or preset.protocol.duration_seconds,
             "repetitions": args.repetitions or preset.protocol.repetitions,
             "seed": args.seed if args.seed is not None else preset.protocol.seed,
+            "events_recorded": record_events,
+            "event_metrics_complete": record_events,
+            "event_export_mode": "full" if record_events else "disabled",
             "output_files": ["preset.json", "metrics.csv", "events.csv", "summary.csv", "metadata.json"],
         },
         output_dir / "metadata.json",
