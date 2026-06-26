@@ -169,7 +169,7 @@ Le script `scripts/bench_headless.py` mesure la boucle headless sans importer Py
 .venv/bin/python scripts/bench_headless.py --scenario headless_1k --steps 5 --profile /tmp/biome_profile.txt
 ```
 
-Les scenarios disponibles sont `headless_1k`, `headless_5k` et `headless_10k`. La sortie JSON inclut le nombre de steps, les steps/s, le temps d'initialisation, le pic memoire et les populations finales.
+Les scenarios disponibles sont `headless_1k`, `headless_5k` et `headless_10k`. La sortie JSON inclut le nombre de steps, les steps/s, le temps d'initialisation, le pic memoire, les populations finales et des cibles indicatives (`target_steps_per_second`, `target_peak_memory_mb`, `target_update_seconds`). Ces cibles documentent une baseline locale; elles ne sont pas des assertions de test.
 
 ## Tests
 
