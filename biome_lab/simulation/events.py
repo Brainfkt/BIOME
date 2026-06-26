@@ -9,10 +9,13 @@ class EventKind(str, Enum):
     BIRTH = "birth"
     DEATH = "death"
     FEEDING = "feeding"
+    INFECTION = "infection"
     PREDATION = "predation"
+    RECOVERY = "recovery"
 
 
 class DeathCause(str, Enum):
+    DISEASE = "disease"
     FAMINE = "famine"
     PREDATION = "predation"
     OLD_AGE = "old_age"
@@ -28,3 +31,5 @@ class SimulationEvent:
     cause: Optional[DeathCause] = None
     energy: Optional[float] = None
     age: Optional[float] = None
+    generation: Optional[int] = None
+    mutation_count: Optional[int] = None

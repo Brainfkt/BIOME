@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, Iterator, List, Optional, Sequence
+import math
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -8,7 +9,7 @@ from biome_lab.behavior.herbivore_policy import HerbivorePolicy
 from biome_lab.behavior.perception import PerceptionSystem
 from biome_lab.behavior.predator_policy import PredatorPolicy
 from biome_lab.behavior.steering import EPSILON, clamp_magnitude, length, normalize
-from biome_lab.config.schemas import BiomeLabPreset, CreatureTraits
+from biome_lab.config.schemas import BiomeLabPreset, CreatureTraits, ObstacleConfig
 from biome_lab.entities.creatures import Creature
 from biome_lab.entities.herbivores import Herbivore
 from biome_lab.entities.plants import Plant
@@ -32,6 +33,9 @@ class World:
         self.plants: List[Plant] = []
         self.herbivores: List[Herbivore] = []
         self.predators: List[Predator] = []
+        self.obstacles = list(self.config.environment.obstacles)
+        self.zones = list(self.config.environment.zones)
+        self.topology_grid = self._build_topology_grid()
         self.events: List[SimulationEvent] = []
         self.perception = PerceptionSystem()
         self.herbivore_policy = HerbivorePolicy()
@@ -53,6 +57,9 @@ class World:
         self.plants = []
         self.herbivores = []
         self.predators = []
+        self.obstacles = list(self.config.environment.obstacles)
+        self.zones = list(self.config.environment.zones)
+        self.topology_grid = self._build_topology_grid()
         self.events = []
         for _ in range(self.config.plant.initial_count):
             self.spawn_plant()
@@ -60,6 +67,7 @@ class World:
             self.spawn_creature("herbivore", initial=True)
         for _ in range(self.config.initial_predators):
             self.spawn_creature("predator", initial=True)
+        self._seed_initial_infections()
         self._refresh_indices()
 
     def next_id(self) -> int:
@@ -90,20 +98,175 @@ class World:
             "predator": sum(1 for creature in self.predators if creature.alive),
         }
 
+    def current_season_index(self) -> int:
+        seasons = self.config.seasons
+        if not seasons.enabled or not seasons.phases:
+            return -1
+        total_fraction = sum(phase.duration_fraction for phase in seasons.phases)
+        cycle_position = (self.time % seasons.cycle_seconds) / seasons.cycle_seconds * total_fraction
+        cursor = 0.0
+        for index, phase in enumerate(seasons.phases):
+            cursor += phase.duration_fraction
+            if cycle_position <= cursor:
+                return index
+        return len(seasons.phases) - 1
+
+    def current_season_name(self) -> str:
+        index = self.current_season_index()
+        if index < 0:
+            return "none"
+        return self.config.seasons.phases[index].name
+
+    def topology_enabled(self) -> bool:
+        return self.config.topology.enabled
+
+    def sample_elevation(self, position: np.ndarray) -> float:
+        rows, columns = self.topology_grid.shape
+        x = float(np.clip(position[0], 0.0, self.config.world_width))
+        y = float(np.clip(position[1], 0.0, self.config.world_height))
+        grid_x = x / max(float(self.config.world_width), 1.0) * (columns - 1)
+        grid_y = y / max(float(self.config.world_height), 1.0) * (rows - 1)
+        x0 = int(np.floor(grid_x))
+        y0 = int(np.floor(grid_y))
+        x1 = min(x0 + 1, columns - 1)
+        y1 = min(y0 + 1, rows - 1)
+        tx = grid_x - x0
+        ty = grid_y - y0
+        top = (1.0 - tx) * self.topology_grid[y0, x0] + tx * self.topology_grid[y0, x1]
+        bottom = (1.0 - tx) * self.topology_grid[y1, x0] + tx * self.topology_grid[y1, x1]
+        return float((1.0 - ty) * top + ty * bottom)
+
+    def topology_summary(self) -> Dict[str, float]:
+        return {
+            "enabled": float(self.config.topology.enabled),
+            "min_elevation": float(np.min(self.topology_grid)),
+            "max_elevation": float(np.max(self.topology_grid)),
+            "mean_elevation": float(np.mean(self.topology_grid)),
+            "roughness": float(np.std(self.topology_grid)),
+        }
+
+    def apply_topology_brush(
+        self,
+        center: np.ndarray,
+        radius: float,
+        strength: float,
+        mode: str,
+    ) -> None:
+        self.config.topology.enabled = True
+        rows, columns = self.topology_grid.shape
+        xs = np.linspace(0.0, self.config.world_width, columns)
+        ys = np.linspace(0.0, self.config.world_height, rows)
+        grid_x, grid_y = np.meshgrid(xs, ys)
+        distance_sq = (grid_x - center[0]) ** 2 + (grid_y - center[1]) ** 2
+        radius = max(float(radius), 1.0)
+        mask = distance_sq <= radius * radius
+        if not np.any(mask):
+            return
+        weight = np.exp(-distance_sq / max(2.0 * (radius * 0.45) ** 2, 1.0))
+        weight *= mask
+        effective_strength = max(0.0, min(float(strength), 1.0))
+        if mode == "valley":
+            self.topology_grid -= weight * effective_strength
+        elif mode == "ridge":
+            self.topology_grid += weight * effective_strength
+        elif mode == "smooth":
+            local_mean = float(np.mean(self.topology_grid[mask]))
+            self.topology_grid[mask] = (
+                self.topology_grid[mask] * (1.0 - weight[mask] * effective_strength)
+                + local_mean * weight[mask] * effective_strength
+            )
+        else:
+            raise ValueError("unknown topology brush mode: %s" % mode)
+        self.topology_grid = np.clip(self.topology_grid, 0.0, 1.0)
+
     def find_creature(self, entity_id: int) -> Optional[Creature]:
         for creature in self.iter_creatures():
             if creature.id == entity_id:
                 return creature
         return None
 
+    def refresh_indices(self) -> None:
+        self._refresh_indices()
+
+    def add_obstacle_rect(
+        self,
+        center: np.ndarray,
+        width: float = 80.0,
+        height: float = 50.0,
+        name: str = "sandbox_obstacle",
+    ) -> ObstacleConfig:
+        obstacle = ObstacleConfig(
+            name=name,
+            x=float(np.clip(center[0] - width / 2.0, 0.0, max(0.0, self.config.world_width - width))),
+            y=float(np.clip(center[1] - height / 2.0, 0.0, max(0.0, self.config.world_height - height))),
+            width=width,
+            height=height,
+            blocks_movement=True,
+        )
+        self.obstacles.append(obstacle)
+        self.config.environment.obstacles.append(obstacle)
+        return obstacle
+
+    def remove_entity_at(self, position: np.ndarray, radius: float = 18.0) -> bool:
+        candidates = [
+            entity
+            for entity in list(self.iter_creatures()) + list(self.plants)
+            if getattr(entity, "alive", False)
+        ]
+        if candidates:
+            nearest = min(candidates, key=lambda entity: entity.distance_to_position(position))
+            if nearest.distance_to_position(position) <= radius:
+                nearest.alive = False
+                self._remove_dead()
+                self._refresh_indices()
+                return True
+        for obstacle in list(self.obstacles):
+            if self._point_in_rect(position, obstacle):
+                self.obstacles.remove(obstacle)
+                if obstacle in self.config.environment.obstacles:
+                    self.config.environment.obstacles.remove(obstacle)
+                return True
+        return False
+
+    def to_state_dict(self) -> Dict[str, object]:
+        return {
+            "time": self.time,
+            "season": self.current_season_name(),
+            "plants": [
+                {
+                    "id": plant.id,
+                    "x": float(plant.position[0]),
+                    "y": float(plant.position[1]),
+                    "energy": plant.energy,
+                }
+                for plant in self.plants
+                if plant.alive
+            ],
+            "creatures": [
+                {
+                    "id": creature.id,
+                    "species": creature.kind,
+                    "x": float(creature.position[0]),
+                    "y": float(creature.position[1]),
+                    "energy": creature.energy,
+                    "age": creature.age,
+                    "disease_state": creature.disease_state,
+                    "generation": creature.generation,
+                    "mutation_count": creature.mutation_count,
+                }
+                for creature in self.iter_living_creatures()
+            ],
+            "obstacles": [obstacle.model_dump() for obstacle in self.obstacles],
+            "zones": [zone.model_dump() for zone in self.zones],
+            "topology": {
+                "summary": self.topology_summary(),
+                "grid": np.round(self.topology_grid, 4).tolist(),
+            },
+        }
+
     def spawn_plant(self, position: Optional[np.ndarray] = None) -> Plant:
         if position is None:
-            position = random_position(
-                self.rng,
-                self.config.world_width,
-                self.config.world_height,
-                padding=self.config.plant.radius,
-            )
+            position = self._random_free_position(self.config.plant.radius)
         plant = Plant(
             id=self.next_id(),
             position=position,
@@ -120,14 +283,25 @@ class World:
         position: Optional[np.ndarray] = None,
         initial: bool = False,
         initial_energy: Optional[float] = None,
+        traits_override: Optional[CreatureTraits] = None,
+        generation: int = 0,
+        mutation_count: int = 0,
     ) -> Creature:
-        traits = self.preset.herbivore if species == "herbivore" else self.preset.predator
-        radius = 6.0 if species == "herbivore" else 7.5
+        if species == "herbivore":
+            traits = traits_override or self.preset.herbivore
+            radius = self.config.herbivore_radius
+        elif species == "predator":
+            traits = traits_override or self.preset.predator
+            radius = self.config.predator_radius
+        else:
+            raise ValueError("unknown creature species: %s" % species)
         if position is None:
-            position = random_position(self.rng, self.config.world_width, self.config.world_height, padding=radius)
+            position = self._random_free_position(radius)
         if initial_energy is None:
-            low = traits.max_energy * (0.55 if initial else 0.35)
-            high = traits.max_energy * (0.88 if initial else 0.55)
+            low_fraction = self.config.initial_energy_min_fraction if initial else self.config.birth_energy_min_fraction
+            high_fraction = self.config.initial_energy_max_fraction if initial else self.config.birth_energy_max_fraction
+            low = traits.max_energy * low_fraction
+            high = traits.max_energy * high_fraction
             initial_energy = float(self.rng.uniform(low, high))
         kwargs = {
             "id": self.next_id(),
@@ -139,6 +313,8 @@ class World:
             "energy": min(initial_energy, traits.max_energy),
             "birth_time": self.time,
             "reproduction_cooldown_remaining": traits.reproduction_cooldown if not initial else self.rng.uniform(0, traits.reproduction_cooldown),
+            "generation": generation,
+            "mutation_count": mutation_count,
         }
         if species == "herbivore":
             creature: Creature = Herbivore(**kwargs)
@@ -156,6 +332,7 @@ class World:
         events: List[SimulationEvent] = []
         events.extend(self._age_and_check_mortality(dt))
         self._refresh_indices()
+        events.extend(self._update_disease(dt))
 
         initial_herbivore_count = len(self.herbivores)
         for index in range(initial_herbivore_count):
@@ -187,6 +364,86 @@ class World:
                 event = self._kill_creature(creature, DeathCause.OLD_AGE)
                 if event is not None:
                     events.append(event)
+        return events
+
+    def _seed_initial_infections(self) -> None:
+        disease = self.config.disease
+        if not disease.enabled or disease.initial_infected <= 0:
+            return
+        living = list(self.iter_living_creatures())
+        if not living:
+            return
+        count = min(disease.initial_infected, len(living))
+        indices = self.rng.choice(len(living), size=count, replace=False)
+        for index in np.atleast_1d(indices):
+            creature = living[int(index)]
+            creature.disease_state = "infected"
+            creature.infection_timer = 0.0
+
+    def _update_disease(self, dt: float) -> List[SimulationEvent]:
+        disease = self.config.disease
+        if not disease.enabled:
+            return []
+
+        events: List[SimulationEvent] = []
+        infected = [
+            creature
+            for creature in self.iter_living_creatures()
+            if creature.disease_state == "infected"
+        ]
+        if not infected:
+            return []
+
+        for source in infected:
+            source.infection_timer += dt
+            source.energy -= disease.energy_drain_per_second * dt
+            if source.energy <= 0.0:
+                death = self._kill_creature(source, DeathCause.DISEASE)
+                if death is not None:
+                    events.append(death)
+                continue
+
+            mortality_risk = 1.0 - math.exp(-disease.mortality_probability_per_second * dt)
+            if mortality_risk > 0.0 and float(self.rng.random()) < mortality_risk:
+                death = self._kill_creature(source, DeathCause.DISEASE)
+                if death is not None:
+                    events.append(death)
+                continue
+
+            if source.infection_timer >= disease.recovery_seconds:
+                source.disease_state = "recovered"
+                source.infection_timer = 0.0
+                events.append(
+                    SimulationEvent(
+                        time=self.time,
+                        kind=EventKind.RECOVERY,
+                        species=source.kind,
+                        entity_id=source.id,
+                    )
+                )
+                continue
+
+            candidates = self._nearby_creatures(source.position, disease.transmission_radius)
+            for target in candidates:
+                if target.id == source.id or not target.alive:
+                    continue
+                if target.disease_state != "susceptible":
+                    continue
+                risk = disease.transmission_probability_per_second
+                risk *= self._disease_multiplier_at(target.position)
+                risk = min(1.0, risk * dt)
+                if risk > 0.0 and float(self.rng.random()) < risk:
+                    target.disease_state = "infected"
+                    target.infection_timer = 0.0
+                    events.append(
+                        SimulationEvent(
+                            time=self.time,
+                            kind=EventKind.INFECTION,
+                            species=target.kind,
+                            entity_id=target.id,
+                            target_id=source.id,
+                        )
+                    )
         return events
 
     def _update_herbivore(self, herbivore: Herbivore, dt: float) -> List[SimulationEvent]:
@@ -244,13 +501,17 @@ class World:
         old_position = creature.position.copy()
         new_position = old_position + velocity * dt
         new_position, velocity = self._apply_bounds(old_position, new_position, velocity, dt)
+        new_position, velocity = self._apply_obstacles(old_position, new_position, velocity, creature.radius)
         creature.position = new_position
         creature.velocity = velocity
         speed = length(velocity)
         if speed > EPSILON:
             creature.heading = normalize(velocity)
         distance = float(np.linalg.norm(creature.position - old_position))
-        creature.apply_energy_cost(distance, dt)
+        metabolism_multiplier = self._metabolism_multiplier_at(creature.position)
+        movement_cost_multiplier = self._movement_cost_multiplier_at(creature.position)
+        creature.energy -= creature.traits.basal_metabolism * metabolism_multiplier * dt
+        creature.energy -= creature.traits.movement_energy_cost * movement_cost_multiplier * distance
         creature.register_behavior_time(dt)
         if creature.energy <= 0.0:
             event = self._kill_creature(creature, DeathCause.FAMINE)
@@ -264,7 +525,8 @@ class World:
         dt: float,
     ) -> np.ndarray:
         assert creature.traits is not None
-        desired_velocity = clamp_magnitude(desired_velocity, creature.traits.max_speed)
+        max_speed = creature.traits.max_speed * self._speed_multiplier_at(creature.position)
+        desired_velocity = clamp_magnitude(desired_velocity, max_speed)
         desired_speed = length(desired_velocity)
         if desired_speed <= EPSILON:
             return np.zeros(2, dtype=float)
@@ -275,7 +537,7 @@ class World:
         if length(current_direction) <= EPSILON:
             return desired_velocity
 
-        max_turn = MAX_CREATURE_TURN_RATE * dt
+        max_turn = float(np.deg2rad(self.config.creature_turn_rate_deg)) * dt
         dot = float(np.clip(np.dot(current_direction, desired_direction), -1.0, 1.0))
         angle = float(np.arccos(dot))
         if angle <= max_turn:
@@ -309,17 +571,146 @@ class World:
         adjusted_velocity = velocity.copy()
         if bounded[0] < 0.0 or bounded[0] > width:
             bounded[0] = float(np.clip(bounded[0], 0.0, width))
-            adjusted_velocity[0] *= -0.45
+            adjusted_velocity[0] *= -self.config.boundary_bounce
         if bounded[1] < 0.0 or bounded[1] > height:
             bounded[1] = float(np.clip(bounded[1], 0.0, height))
-            adjusted_velocity[1] *= -0.45
+            adjusted_velocity[1] *= -self.config.boundary_bounce
         if dt > 0.0 and np.any(bounded != new_position):
             adjusted_velocity = (bounded - old_position) / dt
         return bounded, adjusted_velocity
 
+    def _apply_obstacles(
+        self,
+        old_position: np.ndarray,
+        new_position: np.ndarray,
+        velocity: np.ndarray,
+        radius: float,
+    ) -> Sequence[np.ndarray]:
+        if self._position_blocked(new_position, radius):
+            return old_position, np.zeros(2, dtype=float)
+        return new_position, velocity
+
+    def _random_free_position(self, radius: float) -> np.ndarray:
+        for _ in range(100):
+            position = random_position(
+                self.rng,
+                self.config.world_width,
+                self.config.world_height,
+                padding=radius,
+            )
+            if not self._position_blocked(position, radius):
+                return position
+        return random_position(
+            self.rng,
+            self.config.world_width,
+            self.config.world_height,
+            padding=radius,
+        )
+
+    def _position_blocked(self, position: np.ndarray, radius: float) -> bool:
+        for obstacle in self.obstacles:
+            if obstacle.blocks_movement and self._circle_intersects_rect(position, radius, obstacle):
+                return True
+        return False
+
+    def _point_in_rect(self, position: np.ndarray, rect) -> bool:
+        return (
+            rect.x <= float(position[0]) <= rect.x + rect.width
+            and rect.y <= float(position[1]) <= rect.y + rect.height
+        )
+
+    def _circle_intersects_rect(self, position: np.ndarray, radius: float, rect) -> bool:
+        nearest_x = float(np.clip(position[0], rect.x, rect.x + rect.width))
+        nearest_y = float(np.clip(position[1], rect.y, rect.y + rect.height))
+        delta_x = float(position[0]) - nearest_x
+        delta_y = float(position[1]) - nearest_y
+        return delta_x * delta_x + delta_y * delta_y <= radius * radius
+
+    def _zone_at(self, position: np.ndarray):
+        for zone in self.zones:
+            if self._point_in_rect(position, zone):
+                return zone
+        return None
+
+    def _season_phase(self):
+        index = self.current_season_index()
+        if index < 0:
+            return None
+        return self.config.seasons.phases[index]
+
+    def _speed_multiplier_at(self, position: np.ndarray) -> float:
+        zone = self._zone_at(position)
+        return 1.0 if zone is None else zone.speed_multiplier
+
+    def _metabolism_multiplier_at(self, position: np.ndarray) -> float:
+        multiplier = 1.0
+        zone = self._zone_at(position)
+        season = self._season_phase()
+        if zone is not None:
+            multiplier *= zone.metabolism_multiplier
+        if season is not None:
+            multiplier *= season.metabolism_multiplier
+        return multiplier
+
+    def _movement_cost_multiplier_at(self, position: np.ndarray) -> float:
+        multiplier = 1.0
+        zone = self._zone_at(position)
+        season = self._season_phase()
+        if zone is not None:
+            multiplier *= zone.movement_cost_multiplier
+        if season is not None:
+            multiplier *= season.movement_cost_multiplier
+        return multiplier
+
+    def _plant_regrowth_multiplier(self) -> float:
+        season = self._season_phase()
+        return 1.0 if season is None else season.plant_regrowth_multiplier
+
+    def _disease_multiplier_at(self, position: np.ndarray) -> float:
+        multiplier = 1.0
+        zone = self._zone_at(position)
+        season = self._season_phase()
+        if zone is not None:
+            multiplier *= zone.disease_transmission_multiplier
+        if season is not None:
+            multiplier *= season.disease_transmission_multiplier
+        return multiplier
+
+    def _nearby_creatures(self, position: np.ndarray, radius: float) -> List[Creature]:
+        creatures: List[Creature] = []
+        creatures.extend(self.herbivore_index.query_radius(position, radius))
+        creatures.extend(self.predator_index.query_radius(position, radius))
+        return creatures
+
+    def _child_traits(self, parent: Creature) -> Tuple[CreatureTraits, bool]:
+        assert parent.traits is not None
+        mutation = self.config.mutation
+        if not mutation.enabled or float(self.rng.random()) >= mutation.probability:
+            return parent.traits, False
+
+        base_traits = self.preset.herbivore if parent.kind == "herbivore" else self.preset.predator
+        updates: Dict[str, float] = {}
+        for trait_name in mutation.mutable_traits:
+            if not hasattr(parent.traits, trait_name) or not hasattr(base_traits, trait_name):
+                continue
+            current_value = getattr(parent.traits, trait_name)
+            base_value = getattr(base_traits, trait_name)
+            if not isinstance(current_value, (int, float)) or not isinstance(base_value, (int, float)):
+                continue
+            factor = 1.0 + float(self.rng.uniform(-mutation.strength, mutation.strength))
+            lower = float(base_value) * mutation.min_trait_multiplier
+            upper = float(base_value) * mutation.max_trait_multiplier
+            updates[trait_name] = float(np.clip(float(current_value) * factor, lower, upper))
+        if not updates:
+            return parent.traits, False
+        return parent.traits.model_copy(update=updates), True
+
     def _consume_nearby_plant(self, herbivore: Herbivore) -> Optional[SimulationEvent]:
         assert herbivore.traits is not None
-        nearby = self.plant_index.query_radius(herbivore.position, herbivore.radius + self.config.plant.radius + 2.0)
+        nearby = self.plant_index.query_radius(
+            herbivore.position,
+            herbivore.radius + self.config.plant.radius + self.config.plant_interaction_margin,
+        )
         living = [plant for plant in nearby if getattr(plant, "alive", False)]
         if not living:
             return None
@@ -339,7 +730,7 @@ class World:
 
     def _attack_nearby_prey(self, predator: Predator) -> List[SimulationEvent]:
         assert predator.traits is not None
-        radius = predator.traits.attack_range + predator.radius + 6.0
+        radius = predator.traits.attack_range + predator.radius + self.config.predator_attack_margin
         candidates = self.herbivore_index.query_radius(predator.position, radius)
         living = [prey for prey in candidates if getattr(prey, "alive", False)]
         if not living:
@@ -377,10 +768,21 @@ class World:
         child_position = jittered_position(
             self.rng,
             parent.position,
-            radius=18.0,
+            radius=self.config.reproduction_spawn_radius,
             bounds=(self.config.world_width, self.config.world_height),
         )
-        child = self.spawn_creature(parent.kind, position=child_position, initial=False, initial_energy=child_energy)
+        if self._position_blocked(child_position, parent.radius):
+            child_position = self._random_free_position(parent.radius)
+        child_traits, mutated = self._child_traits(parent)
+        child = self.spawn_creature(
+            parent.kind,
+            position=child_position,
+            initial=False,
+            initial_energy=child_energy,
+            traits_override=child_traits,
+            generation=parent.generation + 1,
+            mutation_count=parent.mutation_count + (1 if mutated else 0),
+        )
         return [
             SimulationEvent(
                 time=self.time,
@@ -389,6 +791,8 @@ class World:
                 entity_id=child.id,
                 target_id=parent.id,
                 energy=child.energy,
+                generation=child.generation,
+                mutation_count=child.mutation_count,
             )
         ]
 
@@ -418,7 +822,11 @@ class World:
         if capacity <= 0:
             self._plant_regrowth_credit = 0.0
             return
-        self._plant_regrowth_credit += self.config.plant.regrowth_per_second * dt
+        self._plant_regrowth_credit += (
+            self.config.plant.regrowth_per_second
+            * self._plant_regrowth_multiplier()
+            * dt
+        )
         spawn_count = min(int(self._plant_regrowth_credit), capacity)
         if spawn_count <= 0:
             return
