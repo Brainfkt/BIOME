@@ -14,8 +14,9 @@ def length_squared(vector: np.ndarray) -> float:
 
 
 def distance_squared(first: np.ndarray, second: np.ndarray) -> float:
-    delta = first - second
-    return length_squared(delta)
+    delta_x = float(first[0]) - float(second[0])
+    delta_y = float(first[1]) - float(second[1])
+    return delta_x * delta_x + delta_y * delta_y
 
 
 def length(vector: np.ndarray) -> float:

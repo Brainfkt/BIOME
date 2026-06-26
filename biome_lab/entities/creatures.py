@@ -45,18 +45,19 @@ class Creature(Entity):
     mutation_count: int = 0
 
     def __setattr__(self, name: str, value: object) -> None:
-        if name == "disease_state":
-            new_state = DiseaseState(value)
-            current = self.__dict__.get("disease_state")
-            if current is not None:
-                current_state = DiseaseState(current)
-                if new_state not in self.DISEASE_TRANSITIONS[current_state]:
-                    raise ValueError(
-                        "invalid disease transition: %s -> %s"
-                        % (current_state.value, new_state.value)
-                    )
-            value = new_state
-        super().__setattr__(name, value)
+        if name != "disease_state":
+            object.__setattr__(self, name, value)
+            return
+        new_state = DiseaseState(value)
+        current = self.__dict__.get("disease_state")
+        if current is not None:
+            current_state = DiseaseState(current)
+            if new_state not in self.DISEASE_TRANSITIONS[current_state]:
+                raise ValueError(
+                    "invalid disease transition: %s -> %s"
+                    % (current_state.value, new_state.value)
+                )
+        object.__setattr__(self, name, new_state)
 
     def infect(self) -> None:
         self.disease_state = DiseaseState.INFECTED

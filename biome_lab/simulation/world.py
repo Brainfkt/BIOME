@@ -39,6 +39,7 @@ from biome_lab.simulation.spatial_index import SpatialIndex
 
 
 MAX_CREATURE_TURN_RATE = float(np.deg2rad(220.0))
+SPATIAL_INDEX_CELL_SIZE = 64.0
 MutationChange = Tuple[MutableTrait, float, float]
 
 
@@ -61,9 +62,9 @@ class World:
         self.perception = PerceptionSystem()
         self.herbivore_policy = HerbivorePolicy()
         self.predator_policy = PredatorPolicy()
-        self.plant_index = SpatialIndex(cell_size=max(self.preset.herbivore.vision_range, 64.0))
-        self.herbivore_index = SpatialIndex(cell_size=max(self.preset.predator.vision_range, 64.0))
-        self.predator_index = SpatialIndex(cell_size=max(self.preset.herbivore.vision_range, 64.0))
+        self.plant_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
+        self.herbivore_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
+        self.predator_index = SpatialIndex(cell_size=SPATIAL_INDEX_CELL_SIZE)
         self.reset()
 
     @property
@@ -595,7 +596,10 @@ class World:
         self.time += dt
         events: List[SimulationEvent] = []
         events.extend(self._age_and_check_mortality(dt))
-        self._refresh_indices()
+        if self.config.disease.enabled:
+            self._refresh_indices()
+        else:
+            self._refresh_indices(herbivores=False)
         events.extend(self._update_disease(dt))
 
         initial_herbivore_count = len(self.herbivores)
