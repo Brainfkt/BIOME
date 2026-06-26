@@ -21,7 +21,7 @@ class PredatorPolicy:
         target = None
         target_distance_sq = float("inf")
         for candidate in visible_prey:
-            candidate_distance_sq = distance_squared(predator.position, getattr(candidate, "position"))
+            candidate_distance_sq = distance_squared(predator.position, candidate.position)
             if candidate_distance_sq < target_distance_sq:
                 target = candidate
                 target_distance_sq = candidate_distance_sq
@@ -30,8 +30,8 @@ class PredatorPolicy:
             if predator.is_hungry() or target_distance_sq <= close_distance * close_distance:
                 return BehaviorDecision(
                     state=BehaviorState.HUNTING,
-                    desired_velocity=seek(predator.position, getattr(target, "position"), predator.traits.max_speed),
-                    target_id=getattr(target, "id", None),
+                    desired_velocity=seek(predator.position, target.position, predator.traits.max_speed),
+                    target_id=target.id,
                 )
 
         if predator.can_reproduce():

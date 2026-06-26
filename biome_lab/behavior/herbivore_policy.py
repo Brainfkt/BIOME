@@ -23,28 +23,28 @@ class HerbivorePolicy:
         threats = [
             predator
             for predator in visible_predators
-            if distance_squared(herbivore.position, getattr(predator, "position")) <= flee_distance_sq
+            if distance_squared(herbivore.position, predator.position) <= flee_distance_sq
         ]
         if threats:
             return BehaviorDecision(
                 state=BehaviorState.FLEEING,
                 desired_velocity=flee_from(herbivore.position, threats, herbivore.traits.max_speed),
-                target_id=getattr(threats[0], "id", None),
+                target_id=threats[0].id,
             )
 
         if herbivore.is_hungry():
             target = None
             target_distance_sq = float("inf")
             for plant in visible_plants:
-                plant_distance_sq = distance_squared(herbivore.position, getattr(plant, "position"))
+                plant_distance_sq = distance_squared(herbivore.position, plant.position)
                 if plant_distance_sq < target_distance_sq:
                     target = plant
                     target_distance_sq = plant_distance_sq
             if target is not None:
                 return BehaviorDecision(
                     state=BehaviorState.SEEKING_FOOD,
-                    desired_velocity=seek(herbivore.position, getattr(target, "position"), herbivore.traits.max_speed),
-                    target_id=getattr(target, "id", None),
+                    desired_velocity=seek(herbivore.position, target.position, herbivore.traits.max_speed),
+                    target_id=target.id,
                 )
 
         if herbivore.can_reproduce():

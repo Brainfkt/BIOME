@@ -1116,9 +1116,9 @@ class World:
         plant = None
         best_distance_sq = math.inf
         for candidate in nearby:
-            if not getattr(candidate, "alive", False):
+            if not candidate.alive:
                 continue
-            candidate_distance_sq = distance_squared(herbivore.position, getattr(candidate, "position"))
+            candidate_distance_sq = distance_squared(herbivore.position, candidate.position)
             if candidate_distance_sq < best_distance_sq:
                 plant = candidate
                 best_distance_sq = candidate_distance_sq
@@ -1133,7 +1133,7 @@ class World:
             kind=EventKind.FEEDING,
             species=herbivore.kind,
             entity_id=herbivore.id,
-            target_id=getattr(plant, "id", None),
+            target_id=plant.id,
             energy=gain,
         )
 
@@ -1148,9 +1148,9 @@ class World:
         prey = None
         best_distance_sq = math.inf
         for candidate in candidates:
-            if not getattr(candidate, "alive", False):
+            if not candidate.alive:
                 continue
-            candidate_distance_sq = distance_squared(predator.position, getattr(candidate, "position"))
+            candidate_distance_sq = distance_squared(predator.position, candidate.position)
             if candidate_distance_sq < best_distance_sq:
                 prey = candidate
                 best_distance_sq = candidate_distance_sq

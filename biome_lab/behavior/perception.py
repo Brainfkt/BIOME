@@ -45,11 +45,11 @@ class PerceptionSystem:
 
         append = results.append
         for candidate in candidates:
-            if not getattr(candidate, "alive", True):
+            if not candidate.alive:
                 continue
-            if getattr(candidate, "id", None) == observer_id:
+            if candidate.id == observer_id:
                 continue
-            target_position = getattr(candidate, "position")
+            target_position = candidate.position
             delta_x = float(target_position[0]) - observer_x
             delta_y = float(target_position[1]) - observer_y
             if assume_in_range and not check_angle:

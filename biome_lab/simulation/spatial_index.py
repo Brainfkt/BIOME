@@ -18,9 +18,9 @@ class SpatialIndex:
         cells.clear()
         cell_size = self.cell_size
         for entity in entities:
-            if not getattr(entity, "alive", True):
+            if not entity.alive:
                 continue
-            position = getattr(entity, "position")
+            position = entity.position
             cell = (int(float(position[0]) // cell_size), int(float(position[1]) // cell_size))
             cells[cell].append(entity)
 
@@ -52,7 +52,7 @@ class SpatialIndex:
                 if not cell_entities:
                     continue
                 for entity in cell_entities:
-                    entity_position = getattr(entity, "position")
+                    entity_position = entity.position
                     delta_x = float(entity_position[0]) - origin_x
                     delta_y = float(entity_position[1]) - origin_y
                     if delta_x * delta_x + delta_y * delta_y <= radius_sq:
