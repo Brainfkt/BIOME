@@ -33,6 +33,10 @@ class Creature(Entity):
     target_id: Optional[int] = None
     death_cause: Optional[DeathCause] = None
     behavior_time: Dict[str, float] = field(default_factory=dict)
+    disease_state: str = "susceptible"
+    infection_timer: float = 0.0
+    generation: int = 0
+    mutation_count: int = 0
 
     def is_hungry(self) -> bool:
         assert self.traits is not None
@@ -63,4 +67,3 @@ class Creature(Entity):
         self.alive = False
         self.death_cause = cause
         self.velocity = np.zeros(2, dtype=float)
-
