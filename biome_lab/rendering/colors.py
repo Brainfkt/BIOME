@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+
+BACKGROUND = (18, 24, 26)
+WORLD_BG = (25, 34, 33)
+WORLD_GRID = (39, 52, 50)
+PANEL_BG = (30, 36, 39)
+PANEL_BORDER = (64, 76, 79)
+TEXT = (225, 232, 229)
+TEXT_MUTED = (150, 164, 160)
+ACCENT = (94, 176, 214)
+BUTTON = (46, 58, 63)
+BUTTON_HOVER = (58, 73, 78)
+BUTTON_ACTIVE = (65, 116, 138)
+PLANT = (91, 170, 84)
+SELECTION = (245, 214, 112)
+FLEEING = (255, 194, 92)
+SEEKING_FOOD = (92, 202, 125)
+HUNTING = (235, 98, 86)
+REPRODUCING = (182, 132, 220)
+EXPLORING = (132, 178, 210)
+
+
+BEHAVIOR_COLORS = {
+    "fleeing": FLEEING,
+    "seeking_food": SEEKING_FOOD,
+    "hunting": HUNTING,
+    "reproducing": REPRODUCING,
+    "exploring": EXPLORING,
+    "idle": TEXT_MUTED,
+}
+
