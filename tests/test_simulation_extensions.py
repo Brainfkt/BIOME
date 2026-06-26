@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from biome_lab.config.defaults import create_default_preset
-from biome_lab.config.schemas import BiomeLabPreset
+from biome_lab.config.schemas import BiomeLabPreset, ObstacleConfig
+from biome_lab.simulation.events import EventKind
 from biome_lab.simulation.world import World
 
 
@@ -129,13 +130,72 @@ def test_runtime_settings_toggle_experimental_systems() -> None:
     world = World(create_default_preset())
     creature = world.herbivores[0]
 
-    world.set_system_enabled("topology", True)
+    topology_events = world.set_system_enabled("topology", True)
     world.set_system_enabled("seasons", True)
     world.set_system_enabled("mutation", True)
-    world.set_system_enabled("disease", True, preferred_id=creature.id)
+    disease_events = world.set_system_enabled("disease", True, preferred_id=creature.id)
 
     assert world.config.topology.enabled
     assert world.config.seasons.enabled
     assert world.config.mutation.enabled
     assert world.config.disease.enabled
     assert creature.disease_state == "infected"
+    assert topology_events[0].kind == EventKind.SYSTEM_TOGGLE
+    assert any(event.kind == EventKind.INITIAL_INFECTION for event in disease_events)
+
+
+def test_boundary_bounce_changes_velocity_after_collision() -> None:
+    world = World(create_default_preset())
+    old_position = np.array([2.0, 100.0])
+    new_position = np.array([-4.0, 100.0])
+    velocity = np.array([-60.0, 0.0])
+
+    bounded, adjusted_velocity = world._apply_bounds(old_position, new_position, velocity, dt=0.1)
+
+    assert bounded[0] == 0.0
+    assert adjusted_velocity[0] == 60.0 * world.config.boundary_bounce
+
+
+def test_sandbox_spawn_rejects_obstacle_and_out_of_bounds_positions() -> None:
+    world = World(create_default_preset())
+    obstacle = world.add_obstacle_rect(np.array([300.0, 300.0]), width=100.0, height=100.0)
+    center = np.array([obstacle.x + obstacle.width / 2.0, obstacle.y + obstacle.height / 2.0])
+
+    assert world.spawn_plant(center) is None
+    assert "blocked" in (world.last_spawn_error or "")
+    assert world.spawn_creature("herbivore", np.array([-10.0, 50.0]), initial=True) is None
+    assert "outside" in (world.last_spawn_error or "")
+
+
+def test_random_free_position_returns_none_when_world_is_blocked() -> None:
+    world = World(create_default_preset())
+    world.obstacles = [
+        ObstacleConfig(
+            name="full_block",
+            x=0.0,
+            y=0.0,
+            width=float(world.config.world_width),
+            height=float(world.config.world_height),
+            blocks_movement=True,
+        )
+    ]
+
+    assert world._random_free_position(world.config.herbivore_radius) is None
+
+
+def test_initial_infections_create_events_on_reset() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "disease": {
+                    **data["simulation"]["disease"],
+                    "enabled": True,
+                    "initial_infected": 2,
+                },
+            }
+        )
+    )
+
+    world = World(preset)
+
+    assert sum(event.kind == EventKind.INITIAL_INFECTION for event in world.events) == 2

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 Color = Tuple[int, int, int]
+Vector2 = Tuple[float, float]
+SUPPORTED_SCHEMA_VERSION = 1
+MAX_UI_TOPOLOGY_CELLS = 120_000
 
 
 class ScientificCard(BaseModel):
@@ -105,11 +108,11 @@ class EnvironmentZoneConfig(BaseModel):
     width: float = Field(gt=0)
     height: float = Field(gt=0)
     color: Color = (70, 106, 124)
-    speed_multiplier: float = Field(gt=0)
-    metabolism_multiplier: float = Field(gt=0)
-    movement_cost_multiplier: float = Field(gt=0)
-    plant_regrowth_multiplier: float = Field(ge=0)
-    disease_transmission_multiplier: float = Field(ge=0)
+    speed_multiplier: float = Field(gt=0, le=10)
+    metabolism_multiplier: float = Field(gt=0, le=10)
+    movement_cost_multiplier: float = Field(gt=0, le=10)
+    plant_regrowth_multiplier: float = Field(ge=0, le=10)
+    disease_transmission_multiplier: float = Field(ge=0, le=10)
 
     @field_validator("color")
     @classmethod
@@ -249,11 +252,35 @@ class SimulationConfig(BaseModel):
     birth_energy_max_fraction: float = Field(default=0.55, ge=0, le=1)
 
     @model_validator(mode="after")
-    def validate_energy_fractions(self) -> "SimulationConfig":
+    def validate_constraints(self) -> "SimulationConfig":
+        if self.initial_herbivores + self.initial_predators > self.max_creatures:
+            raise ValueError("initial_herbivores + initial_predators must be lower than or equal to max_creatures")
         if self.initial_energy_min_fraction > self.initial_energy_max_fraction:
             raise ValueError("initial_energy_min_fraction cannot exceed initial_energy_max_fraction")
         if self.birth_energy_min_fraction > self.birth_energy_max_fraction:
             raise ValueError("birth_energy_min_fraction cannot exceed birth_energy_max_fraction")
+        max_spawn_radius = max(
+            self.herbivore_radius,
+            self.predator_radius,
+            self.plant.radius,
+            self.reproduction_spawn_radius,
+        )
+        if self.world_width <= max_spawn_radius * 2 or self.world_height <= max_spawn_radius * 2:
+            raise ValueError("world dimensions must be larger than entity radii and spawn padding")
+        for obstacle in self.environment.obstacles:
+            if obstacle.x + obstacle.width > self.world_width or obstacle.y + obstacle.height > self.world_height:
+                raise ValueError("obstacle '%s' must fit inside world dimensions" % obstacle.name)
+        for zone in self.environment.zones:
+            if zone.x + zone.width > self.world_width or zone.y + zone.height > self.world_height:
+                raise ValueError("environment zone '%s' must fit inside world dimensions" % zone.name)
+        max_feature_extent = max(float(self.world_width), float(self.world_height)) * 2.0
+        for feature in self.topology.features:
+            if feature.x > self.world_width or feature.y > self.world_height:
+                raise ValueError("topology feature '%s' center must be inside world dimensions" % feature.name)
+            if feature.length > max_feature_extent or feature.width > max_feature_extent:
+                raise ValueError("topology feature '%s' extent is too large for world dimensions" % feature.name)
+        if self.topology.grid_columns * self.topology.grid_rows > MAX_UI_TOPOLOGY_CELLS:
+            raise ValueError("topology grid is too large for the current UI limit")
         return self
 
 
@@ -281,8 +308,122 @@ class BiomeLabPreset(BaseModel):
     predator: CreatureTraits
     protocol: ExperimentProtocol
 
+    @model_validator(mode="after")
+    def validate_preset_contract(self) -> "BiomeLabPreset":
+        if self.schema_version != SUPPORTED_SCHEMA_VERSION:
+            raise ValueError("unsupported preset schema_version: %s" % self.schema_version)
+        if self.simulation.seed != self.protocol.seed:
+            raise ValueError("simulation.seed and protocol.seed must match for reproducible presets")
+        return self
+
     @classmethod
     def from_json_path(cls, path: Path) -> "BiomeLabPreset":
+        return cls.model_validate_json(path.read_text(encoding="utf-8"))
+
+    def to_json(self) -> str:
+        return self.model_dump_json(indent=2)
+
+    def save_json(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.to_json(), encoding="utf-8")
+
+
+class PlantState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int = Field(ge=0)
+    position: Vector2
+    radius: float = Field(gt=0)
+    energy: float = Field(ge=0)
+    alive: bool = True
+
+
+class CreatureState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int = Field(ge=0)
+    species: Literal["herbivore", "predator"]
+    position: Vector2
+    radius: float = Field(gt=0)
+    traits: CreatureTraits
+    velocity: Vector2
+    heading: Vector2
+    energy: float = Field(ge=0)
+    age: float = Field(ge=0)
+    birth_time: float = Field(ge=0)
+    reproduction_cooldown_remaining: float = Field(ge=0)
+    behavior: Literal["fleeing", "seeking_food", "hunting", "reproducing", "exploring", "idle"]
+    target_id: Optional[int] = None
+    disease_state: Literal["susceptible", "infected", "recovered"] = "susceptible"
+    infection_timer: float = Field(default=0.0, ge=0)
+    generation: int = Field(default=0, ge=0)
+    mutation_count: int = Field(default=0, ge=0)
+    alive: bool = True
+
+
+class WorldSystemsState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topology: bool
+    seasons: bool
+    disease: bool
+    mutation: bool
+
+
+class WorldTopologyState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    palette: Literal["natural", "hydrology", "arid", "grayscale"]
+    grid: List[List[float]]
+
+    @model_validator(mode="after")
+    def validate_grid(self) -> "WorldTopologyState":
+        if not self.grid or not self.grid[0]:
+            raise ValueError("world_state topology grid cannot be empty")
+        width = len(self.grid[0])
+        for row in self.grid:
+            if len(row) != width:
+                raise ValueError("world_state topology grid must be rectangular")
+            for value in row:
+                if value < 0.0 or value > 1.0:
+                    raise ValueError("world_state topology grid values must be between 0 and 1")
+        if len(self.grid) * width > MAX_UI_TOPOLOGY_CELLS:
+            raise ValueError("world_state topology grid is too large for the current UI limit")
+        return self
+
+
+class WorldState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_type: Literal["world_state"] = "world_state"
+    schema_version: int = 1
+    preset: BiomeLabPreset
+    time: float = Field(ge=0)
+    id_counter: int = Field(ge=0)
+    plant_regrowth_credit: float = Field(ge=0)
+    rng_state: Dict[str, Any]
+    systems: WorldSystemsState
+    plants: List[PlantState] = Field(default_factory=list)
+    creatures: List[CreatureState] = Field(default_factory=list)
+    obstacles: List[ObstacleConfig] = Field(default_factory=list)
+    zones: List[EnvironmentZoneConfig] = Field(default_factory=list)
+    topology: WorldTopologyState
+
+    @model_validator(mode="after")
+    def validate_world_state_contract(self) -> "WorldState":
+        if self.schema_version != SUPPORTED_SCHEMA_VERSION:
+            raise ValueError("unsupported world_state schema_version: %s" % self.schema_version)
+        rows = len(self.topology.grid)
+        columns = len(self.topology.grid[0])
+        if rows != self.preset.simulation.topology.grid_rows:
+            raise ValueError("world_state topology row count must match preset topology.grid_rows")
+        if columns != self.preset.simulation.topology.grid_columns:
+            raise ValueError("world_state topology column count must match preset topology.grid_columns")
+        return self
+
+    @classmethod
+    def from_json_path(cls, path: Path) -> "WorldState":
         return cls.model_validate_json(path.read_text(encoding="utf-8"))
 
     def to_json(self) -> str:

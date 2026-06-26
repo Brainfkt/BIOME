@@ -75,7 +75,7 @@ PARAMETER_DOCS: Dict[str, Dict[str, str]] = {
         "expected_effect": "Un gain eleve favorise la survie et la reproduction.",
     },
     "environment.zones": {
-        "definition": "Zones rectangulaires qui modifient localement vitesse, cout energetique, repousse ou transmission.",
+        "definition": "Zones rectangulaires qui modifient localement vitesse, cout energetique, repousse ou transmission; les multiplicateurs exposes sont bornes de 0 a 10 ou de >0 a 10 selon le parametre.",
         "role": "Modele des heterogeneites spatiales comme biomes, refuges ou zones hostiles.",
         "expected_effect": "Des zones favorables concentrent les populations; des zones couteuses fragmentent les trajectoires.",
     },
