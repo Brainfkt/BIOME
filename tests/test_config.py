@@ -113,3 +113,31 @@ def test_simulation_and_protocol_seeds_must_match() -> None:
 
     with pytest.raises(ValidationError, match="simulation.seed"):
         BiomeLabPreset.model_validate(data)
+
+
+def test_mutation_rejects_unknown_mutable_trait() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["mutation"]["mutable_traits"] = ["hunger_threshold"]
+
+    with pytest.raises(ValidationError):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_mutation_requires_bounds_for_mutable_traits() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["mutation"]["mutable_traits"] = ["max_speed", "vision_range"]
+    del data["simulation"]["mutation"]["trait_bounds"]["vision_range"]
+
+    with pytest.raises(ValidationError, match="missing mutation trait bounds"):
+        BiomeLabPreset.model_validate(data)
+
+
+def test_mutation_trait_bounds_must_be_ordered() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["mutation"]["trait_bounds"]["max_speed"] = {
+        "min_value": 100.0,
+        "max_value": 50.0,
+    }
+
+    with pytest.raises(ValidationError, match="min_value"):
+        BiomeLabPreset.model_validate(data)

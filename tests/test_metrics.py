@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from biome_lab.metrics.collector import MetricsCollector
 from biome_lab.simulation.events import DeathCause, EventKind, SimulationEvent
+from biome_lab.config.defaults import create_default_preset
+from biome_lab.simulation.world import World
 
 
 def test_event_rates_and_survival_time_are_scientific_metrics() -> None:
@@ -18,11 +20,13 @@ def test_event_rates_and_survival_time_are_scientific_metrics() -> None:
                 age=12.0,
             ),
             SimulationEvent(time=2.0, kind=EventKind.BIRTH, species="herbivore", entity_id=2, target_id=3),
+            SimulationEvent(time=3.0, kind=EventKind.MUTATION, species="herbivore", entity_id=2, target_id=3),
         ]
     )
 
     assert collector._event_rate(EventKind.PREDATION, now=5.0) == 0.1
     assert collector._event_rate(EventKind.BIRTH, now=5.0, species="herbivore") == 0.1
+    assert collector._event_rate(EventKind.MUTATION, now=5.0) == 0.1
     assert collector._mean_survival_time("herbivore") == 12.0
 
 
@@ -61,3 +65,25 @@ def test_death_counts_support_chart_modes() -> None:
         "predation": 1,
         "old_age": 1,
     }
+
+
+def test_sample_includes_mutation_rate_window() -> None:
+    world = World(create_default_preset())
+    world.time = 5.0
+    collector = MetricsCollector(window_seconds=10.0)
+    collector.record_events(
+        [
+            SimulationEvent(
+                time=1.0,
+                kind=EventKind.MUTATION,
+                species="herbivore",
+                entity_id=2,
+                target_id=1,
+            )
+        ]
+    )
+
+    row = collector.sample(world, force=True)
+
+    assert row is not None
+    assert row["mutation_rate_window"] == 0.1

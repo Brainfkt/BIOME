@@ -63,6 +63,7 @@ def test_mutation_marks_child_generation_when_enabled() -> None:
                     "enabled": True,
                     "probability": 1.0,
                     "strength": 0.05,
+                    "mutable_traits": ["max_speed"],
                 },
             }
         )
@@ -78,6 +79,128 @@ def test_mutation_marks_child_generation_when_enabled() -> None:
     assert events
     assert child.generation == 1
     assert child.mutation_count == 1
+    mutation_events = [event for event in events if event.kind == EventKind.MUTATION]
+    assert len(mutation_events) == 1
+    assert mutation_events[0].entity_id == child.id
+    assert mutation_events[0].target_id == parent.id
+    assert mutation_events[0].mutation_trait == "max_speed"
+    assert mutation_events[0].old_value != mutation_events[0].new_value
+
+
+def test_mutation_respects_trait_bounds() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "initial_herbivores": 0,
+                "initial_predators": 0,
+                "plant": {
+                    **data["simulation"]["plant"],
+                    "initial_count": 0,
+                },
+                "mutation": {
+                    **data["simulation"]["mutation"],
+                    "enabled": True,
+                    "probability": 1.0,
+                    "strength": 1.0,
+                    "mutable_traits": ["max_speed"],
+                    "trait_bounds": {
+                        **data["simulation"]["mutation"]["trait_bounds"],
+                        "max_speed": {
+                            "min_value": 70.0,
+                            "max_value": 71.0,
+                        },
+                    },
+                },
+            }
+        )
+    )
+    world = World(preset)
+    parent = world.spawn_creature("herbivore", np.array([200.0, 200.0]), initial=True)
+    parent.energy = parent.traits.reproduction_threshold
+    parent.reproduction_cooldown_remaining = 0.0
+
+    events = world._try_reproduce(parent)
+    child = world.herbivores[-1]
+    mutation_event = next(event for event in events if event.kind == EventKind.MUTATION)
+
+    assert 70.0 <= child.traits.max_speed <= 71.0
+    assert mutation_event.new_value == child.traits.max_speed
+
+
+def test_invalid_trait_mutation_is_refused_without_mutating_child() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "initial_herbivores": 0,
+                "initial_predators": 0,
+                "plant": {
+                    **data["simulation"]["plant"],
+                    "initial_count": 0,
+                },
+                "mutation": {
+                    **data["simulation"]["mutation"],
+                    "enabled": True,
+                    "probability": 1.0,
+                    "strength": 1.0,
+                    "min_trait_multiplier": 0.1,
+                    "max_trait_multiplier": 4.0,
+                    "mutable_traits": ["reproduction_cost"],
+                    "trait_bounds": {
+                        **data["simulation"]["mutation"]["trait_bounds"],
+                        "reproduction_cost": {
+                            "min_value": 95.0,
+                            "max_value": 100.0,
+                        },
+                    },
+                },
+            }
+        )
+    )
+    world = World(preset)
+    parent = world.spawn_creature("herbivore", np.array([200.0, 200.0]), initial=True)
+    parent.traits = parent.traits.model_copy(update={"reproduction_cost": 91.0})
+    parent.energy = parent.traits.reproduction_threshold
+    parent.reproduction_cooldown_remaining = 0.0
+
+    events = world._try_reproduce(parent)
+    child = world.herbivores[-1]
+
+    assert child.mutation_count == 0
+    assert child.traits.reproduction_cost == 91.0
+    assert not any(event.kind == EventKind.MUTATION for event in events)
+
+
+def test_mutation_is_reproducible_with_fixed_seed() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "initial_herbivores": 0,
+                "initial_predators": 0,
+                "plant": {
+                    **data["simulation"]["plant"],
+                    "initial_count": 0,
+                },
+                "mutation": {
+                    **data["simulation"]["mutation"],
+                    "enabled": True,
+                    "probability": 1.0,
+                    "strength": 0.25,
+                    "mutable_traits": ["vision_range"],
+                },
+            }
+        )
+    )
+    mutation_events = []
+    for _ in range(2):
+        world = World(preset)
+        parent = world.spawn_creature("herbivore", np.array([200.0, 200.0]), initial=True)
+        parent.energy = parent.traits.reproduction_threshold
+        parent.reproduction_cooldown_remaining = 0.0
+        events = world._try_reproduce(parent)
+        mutation_events.append(next(event for event in events if event.kind == EventKind.MUTATION))
+
+    assert mutation_events[0].mutation_trait == mutation_events[1].mutation_trait
+    assert mutation_events[0].new_value == mutation_events[1].new_value
 
 
 def test_sandbox_obstacles_can_be_added_and_removed() -> None:
