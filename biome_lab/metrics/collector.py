@@ -55,6 +55,7 @@ class MetricsCollector:
             "death_rate_predation_window": self._death_rate(world.time, cause=DeathCause.PREDATION),
             "death_rate_old_age_window": self._death_rate(world.time, cause=DeathCause.OLD_AGE),
             "infection_rate_window": self._event_rate(EventKind.INFECTION, world.time),
+            "mutation_rate_window": self._event_rate(EventKind.MUTATION, world.time),
             "predation_rate_window": self._event_rate(EventKind.PREDATION, world.time),
             "reproduction_rate_herbivores_window": self._event_rate(EventKind.BIRTH, world.time, species="herbivore"),
             "reproduction_rate_predators_window": self._event_rate(EventKind.BIRTH, world.time, species="predator"),

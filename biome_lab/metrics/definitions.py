@@ -52,6 +52,11 @@ METRIC_DEFINITIONS: Dict[str, MetricDefinition] = {
         definition="Nombre moyen de mutations heritees par individu vivant.",
         scientific_use="Suit la derive des traits sous reproduction et pression de selection.",
     ),
+    "mutation_rate": MetricDefinition(
+        name="Taux de mutation",
+        definition="Nombre de nouvelles mutations heritees par seconde simulee sur la fenetre recente.",
+        scientific_use="Mesure l'intensite de variation hereditaire produite par la reproduction.",
+    ),
     "season_index": MetricDefinition(
         name="Indice saisonnier",
         definition="Indice numerique de la phase saisonniere active, -1 si les saisons sont desactivees.",
