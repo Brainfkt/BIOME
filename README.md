@@ -63,6 +63,14 @@ biome-lab run --preset presets/default_experiment.json --duration 300 --repetiti
 
 Dans ce mode, `events.csv` garde ses en-tetes mais ne contient pas de lignes; les metriques basees sur les evenements sont marquees comme incompletes dans `metadata.json`.
 
+Pour maximiser le debit sur de tres grands nombres d'agents, utilisez aussi le mode de metriques leger:
+
+```bash
+biome-lab run --preset presets/default_experiment.json --duration 300 --repetitions 5 --output-dir exports --no-events --metrics-mode light
+```
+
+`--metrics-mode light` exporte les populations et energies principales, mais saute les taux evenementiels, parts comportementales, variances fenetrees et resumes terrain couteux. Le mode par defaut reste `full`.
+
 Le mode headless accepte aussi un `world_state` JSON. Dans ce cas, le run reprend depuis l'etat sauvegarde; `--duration` represente la duree simulee additionnelle.
 
 ## Controles
