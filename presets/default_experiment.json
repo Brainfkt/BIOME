@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "name": "default_predator_prey_resource",
   "simulation": {
     "world_width": 1120,
@@ -16,7 +17,84 @@
       "radius": 4.0,
       "energy": 22.0,
       "regrowth_per_second": 2.0
-    }
+    },
+    "environment": {
+      "obstacles": [],
+      "zones": []
+    },
+    "seasons": {
+      "enabled": false,
+      "cycle_seconds": 180.0,
+      "phases": [
+        {
+          "name": "printemps",
+          "duration_fraction": 0.3,
+          "plant_regrowth_multiplier": 1.35,
+          "metabolism_multiplier": 0.95,
+          "movement_cost_multiplier": 0.95,
+          "disease_transmission_multiplier": 1.0
+        },
+        {
+          "name": "ete",
+          "duration_fraction": 0.3,
+          "plant_regrowth_multiplier": 1.05,
+          "metabolism_multiplier": 1.0,
+          "movement_cost_multiplier": 1.0,
+          "disease_transmission_multiplier": 1.1
+        },
+        {
+          "name": "automne",
+          "duration_fraction": 0.2,
+          "plant_regrowth_multiplier": 0.8,
+          "metabolism_multiplier": 1.05,
+          "movement_cost_multiplier": 1.05,
+          "disease_transmission_multiplier": 1.0
+        },
+        {
+          "name": "hiver",
+          "duration_fraction": 0.2,
+          "plant_regrowth_multiplier": 0.45,
+          "metabolism_multiplier": 1.15,
+          "movement_cost_multiplier": 1.1,
+          "disease_transmission_multiplier": 0.85
+        }
+      ]
+    },
+    "disease": {
+      "enabled": false,
+      "initial_infected": 0,
+      "transmission_radius": 18.0,
+      "transmission_probability_per_second": 0.05,
+      "energy_drain_per_second": 0.2,
+      "mortality_probability_per_second": 0.0,
+      "recovery_seconds": 30.0
+    },
+    "mutation": {
+      "enabled": false,
+      "probability": 0.03,
+      "strength": 0.08,
+      "min_trait_multiplier": 0.5,
+      "max_trait_multiplier": 1.5,
+      "mutable_traits": [
+        "max_speed",
+        "vision_range",
+        "vision_angle_deg",
+        "basal_metabolism",
+        "movement_energy_cost",
+        "food_energy_gain"
+      ]
+    },
+    "herbivore_radius": 6.0,
+    "predator_radius": 7.5,
+    "creature_turn_rate_deg": 220.0,
+    "boundary_bounce": 0.45,
+    "plant_interaction_margin": 2.0,
+    "predator_attack_margin": 6.0,
+    "reproduction_spawn_radius": 18.0,
+    "initial_energy_min_fraction": 0.55,
+    "initial_energy_max_fraction": 0.88,
+    "birth_energy_min_fraction": 0.35,
+    "birth_energy_max_fraction": 0.55
   },
   "herbivore": {
     "name": "Herbivore A",
