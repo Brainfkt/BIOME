@@ -43,11 +43,19 @@ Charger un preset JSON dans l'interface:
 biome-lab ui --preset presets/default_experiment.json
 ```
 
+Charger un etat sandbox sauvegarde dans l'interface:
+
+```bash
+biome-lab ui --preset exports/20260626_120000_sandbox_state.json
+```
+
 Lancer une experience headless avec exports JSON/CSV:
 
 ```bash
 biome-lab run --preset presets/default_experiment.json --duration 300 --repetitions 5 --output-dir exports
 ```
+
+Le mode headless accepte aussi un `world_state` JSON. Dans ce cas, le run reprend depuis l'etat sauvegarde; `--duration` represente la duree simulee additionnelle.
 
 ## Controles
 
@@ -59,6 +67,7 @@ biome-lab run --preset presets/default_experiment.json --duration 300 --repetiti
 - `Morts: espece` / `Morts: cause`: alterne le graphique de mortalite.
 - `Export`: ecrit le preset, les series temporelles et le protocole dans `exports/`.
 - `Save`: sauvegarde un etat sandbox JSON dans `exports/`.
+- `Load` ou `L`: recharge le dernier etat sandbox sauvegarde dans `exports/`.
 - `View`: recentre la camera.
 - Outils sandbox: `Select`, `Plant`, `Herb`, `Pred`, `Obstacle`, `Valley`, `Ridge`, `Smooth`, `Erase`.
 - Reglages sandbox: `Topo`, `Seasons`, `Disease`, `Mutation` activent ou desactivent les systemes experimentaux.
@@ -96,6 +105,11 @@ tests/           Tests unitaires.
 
 ## Presets et reproductibilite
 
+Biome Lab utilise deux formats JSON distincts:
+
+- `preset`: configuration experimentale versionnee et partageable. Il decrit les parametres de simulation, les traits, le protocole et les seeds, mais pas l'etat instantane des agents.
+- `world_state`: sauvegarde sandbox versionnee. Il contient le preset courant plus le temps simule, les agents, les plantes, les obstacles, les zones, la grille de topologie peinte, les toggles experimentaux et l'etat du generateur aleatoire.
+
 Le preset par defaut est construit dans `biome_lab/config/defaults.py`. Un preset JSON equivalent peut etre stocke dans `presets/` pour documenter une experience precise.
 
 Les parametres principaux sont:
@@ -109,7 +123,13 @@ Les parametres principaux sont:
 - `topology`: grille d'elevation permettant de creer vallees, cretes, collines et bassins; les pentes augmentent le cout de deplacement.
 - `topology.palette`: palette visuelle du relief, sans effet direct sur la dynamique.
 
-Les seeds sont fixees dans les presets pour rendre les runs comparables.
+`simulation.seed` et `protocol.seed` doivent etre identiques dans un preset valide. Le runner headless utilise cette seed comme depart puis incremente de 1 a chaque repetition.
+
+## Ordre de simulation
+
+A chaque tick, le monde applique dans l'ordre: vieillissement et mortalite par age, maladies, decisions et mouvements des herbivores, decisions et mouvements des predateurs, predation, repousse des plantes, puis nettoyage des entites mortes.
+
+Les nouveau-nes sont ajoutes pendant la decision de reproduction. Un herbivore ne juste avant le tour des predateurs peut donc etre mange dans le meme tick; cette regle est volontairement conservee pour garder une boucle simple et deterministe.
 
 ## Exports
 
@@ -127,12 +147,14 @@ Le mode headless produit un dossier horodate contenant:
 - `summary.csv`: resume final par repetition.
 - `metadata.json`: contexte du run.
 
+Le bouton `Save` produit un fichier `*_sandbox_state.json` chargeable par `Load`, `L`, ou `biome-lab ui --preset`. Ce fichier est un `world_state`, pas un preset experimental minimal.
+
 Le dossier `exports/` est ignore par Git, car il contient des resultats de runs locaux. Si un resultat doit etre partage, copiez le fichier pertinent dans un dossier dedie et documentez le contexte de generation.
 
 ## Tests
 
 ```bash
-pytest
+.venv/bin/python -m pytest
 ```
 
 Les tests couvrent les schemas de configuration, les priorites comportementales, le lissage des virages, les metriques et le contenu des exports Markdown.
