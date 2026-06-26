@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -20,6 +21,12 @@ MutableTrait = Literal[
 ]
 SUPPORTED_SCHEMA_VERSION = 1
 MAX_UI_TOPOLOGY_CELLS = 120_000
+
+
+class DiseaseState(str, Enum):
+    SUSCEPTIBLE = "susceptible"
+    INFECTED = "infected"
+    RECOVERED = "recovered"
 
 
 DEFAULT_MUTABLE_TRAITS: Tuple[MutableTrait, ...] = (
@@ -397,7 +404,7 @@ class CreatureState(BaseModel):
     reproduction_cooldown_remaining: float = Field(ge=0)
     behavior: Literal["fleeing", "seeking_food", "hunting", "reproducing", "exploring", "idle"]
     target_id: Optional[int] = None
-    disease_state: Literal["susceptible", "infected", "recovered"] = "susceptible"
+    disease_state: DiseaseState = DiseaseState.SUSCEPTIBLE
     infection_timer: float = Field(default=0.0, ge=0)
     generation: int = Field(default=0, ge=0)
     mutation_count: int = Field(default=0, ge=0)
