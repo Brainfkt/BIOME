@@ -32,6 +32,7 @@ def run_repetition_results(
     repetitions: Optional[int] = None,
     seed: Optional[int] = None,
     record_events: bool = True,
+    metrics_mode: str = "full",
 ) -> List[RepetitionResult]:
     detailed_results: List[RepetitionResult] = []
     base_seed = preset.protocol.seed if seed is None else seed
@@ -40,7 +41,10 @@ def run_repetition_results(
     for repetition in range(run_count):
         run_preset = preset_with_seed(preset, base_seed + repetition)
         world = World(run_preset)
-        collector = MetricsCollector(window_seconds=run_preset.simulation.metrics_window_seconds)
+        collector = MetricsCollector(
+            window_seconds=run_preset.simulation.metrics_window_seconds,
+            mode=metrics_mode,
+        )
         if record_events:
             collector.record_events(world.events)
         else:
