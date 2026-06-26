@@ -25,6 +25,17 @@ class SpatialIndex:
             cells[cell].append(entity)
 
     def query_radius(self, position: np.ndarray, radius: float) -> List[object]:
+        return self.query_radius_into(position, radius, [])
+
+    def query_radius_into(
+        self,
+        position: np.ndarray,
+        radius: float,
+        results: List[object],
+        clear: bool = True,
+    ) -> List[object]:
+        if clear:
+            results.clear()
         cell_size = self.cell_size
         origin_x = float(position[0])
         origin_y = float(position[1])
@@ -33,7 +44,6 @@ class SpatialIndex:
         min_y = int((origin_y - radius) // cell_size)
         max_y = int((origin_y + radius) // cell_size)
         radius_sq = radius * radius
-        results: List[object] = []
         cells_get = self._cells.get
         append = results.append
         for cell_x in range(min_x, max_x + 1):

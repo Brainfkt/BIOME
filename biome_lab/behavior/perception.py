@@ -11,7 +11,17 @@ from biome_lab.entities.creatures import Creature
 
 class PerceptionSystem:
     def visible_entities(self, observer: Creature, candidates: Iterable[object]) -> List[object]:
+        return self.visible_entities_into(observer, candidates, [])
+
+    def visible_entities_into(
+        self,
+        observer: Creature,
+        candidates: Iterable[object],
+        results: List[object],
+        assume_in_range: bool = False,
+    ) -> List[object]:
         assert observer.traits is not None
+        results.clear()
         observer_id = observer.id
         observer_position = observer.position
         observer_x = float(observer_position[0])
@@ -33,8 +43,7 @@ class PerceptionSystem:
             heading_length = 0.0
             cos_half_angle = 0.0
 
-        visible: List[object] = []
-        append = visible.append
+        append = results.append
         for candidate in candidates:
             if not getattr(candidate, "alive", True):
                 continue
@@ -43,8 +52,11 @@ class PerceptionSystem:
             target_position = getattr(candidate, "position")
             delta_x = float(target_position[0]) - observer_x
             delta_y = float(target_position[1]) - observer_y
+            if assume_in_range and not check_angle:
+                append(candidate)
+                continue
             distance_sq = delta_x * delta_x + delta_y * delta_y
-            if distance_sq > vision_range_sq:
+            if not assume_in_range and distance_sq > vision_range_sq:
                 continue
             if distance_sq < EPSILON_SQ or not check_angle:
                 append(candidate)
@@ -52,7 +64,7 @@ class PerceptionSystem:
             dot = delta_x * heading_x + delta_y * heading_y
             if dot >= cos_half_angle * math.sqrt(distance_sq) * heading_length:
                 append(candidate)
-        return visible
+        return results
 
     def is_visible(self, observer: Creature, target_position: np.ndarray) -> bool:
         assert observer.traits is not None
