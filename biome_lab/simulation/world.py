@@ -14,6 +14,7 @@ from biome_lab.config.schemas import (
     BiomeLabPreset,
     CreatureState,
     CreatureTraits,
+    DiseaseState,
     MutableTrait,
     ObstacleConfig,
     PlantState,
@@ -385,7 +386,7 @@ class World:
         susceptible = [
             creature
             for creature in self.iter_living_creatures()
-            if creature.disease_state == "susceptible"
+            if creature.disease_state == DiseaseState.SUSCEPTIBLE
         ]
         if not susceptible:
             return []
@@ -393,8 +394,7 @@ class World:
         if preferred_id is not None:
             preferred = next((creature for creature in susceptible if creature.id == preferred_id), None)
             if preferred is not None:
-                preferred.disease_state = "infected"
-                preferred.infection_timer = 0.0
+                preferred.infect()
                 susceptible.remove(preferred)
                 events.append(
                     SimulationEvent(
@@ -410,8 +410,7 @@ class World:
             indices = self.rng.choice(len(susceptible), size=take, replace=False)
             for index in np.atleast_1d(indices):
                 creature = susceptible[int(index)]
-                creature.disease_state = "infected"
-                creature.infection_timer = 0.0
+                creature.infect()
                 events.append(
                     SimulationEvent(
                         time=self.time,
@@ -484,7 +483,7 @@ class World:
                     "y": float(creature.position[1]),
                     "energy": creature.energy,
                     "age": creature.age,
-                    "disease_state": creature.disease_state,
+                    "disease_state": creature.disease_state.value,
                     "generation": creature.generation,
                     "mutation_count": creature.mutation_count,
                 }
@@ -639,7 +638,7 @@ class World:
         infected = [
             creature
             for creature in self.iter_living_creatures()
-            if creature.disease_state == "infected"
+            if creature.disease_state == DiseaseState.INFECTED
         ]
         if not infected:
             return []
@@ -661,8 +660,7 @@ class World:
                 continue
 
             if source.infection_timer >= disease.recovery_seconds:
-                source.disease_state = "recovered"
-                source.infection_timer = 0.0
+                source.recover()
                 events.append(
                     SimulationEvent(
                         time=self.time,
@@ -677,14 +675,13 @@ class World:
             for target in candidates:
                 if target.id == source.id or not target.alive:
                     continue
-                if target.disease_state != "susceptible":
+                if target.disease_state != DiseaseState.SUSCEPTIBLE:
                     continue
                 risk = disease.transmission_probability_per_second
                 risk *= self._disease_multiplier_at(target.position)
                 risk = min(1.0, risk * dt)
                 if risk > 0.0 and float(self.rng.random()) < risk:
-                    target.disease_state = "infected"
-                    target.infection_timer = 0.0
+                    target.infect()
                     events.append(
                         SimulationEvent(
                             time=self.time,
