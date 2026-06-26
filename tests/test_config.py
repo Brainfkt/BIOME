@@ -24,3 +24,10 @@ def test_invalid_energy_thresholds_are_rejected() -> None:
     with pytest.raises(ValidationError):
         CreatureTraits.model_validate(data)
 
+
+def test_invalid_terrain_palette_is_rejected() -> None:
+    data = create_default_preset().model_dump()
+    data["simulation"]["topology"]["palette"] = "unknown"
+
+    with pytest.raises(ValidationError):
+        type(create_default_preset()).model_validate(data)
