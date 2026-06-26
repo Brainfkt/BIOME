@@ -8,8 +8,30 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 Color = Tuple[int, int, int]
 Vector2 = Tuple[float, float]
+MutableTrait = Literal[
+    "max_speed",
+    "vision_range",
+    "vision_angle_deg",
+    "basal_metabolism",
+    "movement_energy_cost",
+    "reproduction_cost",
+    "attack_range",
+    "food_energy_gain",
+]
 SUPPORTED_SCHEMA_VERSION = 1
 MAX_UI_TOPOLOGY_CELLS = 120_000
+
+
+DEFAULT_MUTABLE_TRAITS: Tuple[MutableTrait, ...] = (
+    "max_speed",
+    "vision_range",
+    "vision_angle_deg",
+    "basal_metabolism",
+    "movement_energy_cost",
+    "reproduction_cost",
+    "attack_range",
+    "food_energy_gain",
+)
 
 
 class ScientificCard(BaseModel):
@@ -195,6 +217,32 @@ class DiseaseConfig(BaseModel):
     recovery_seconds: float = Field(default=30.0, gt=0)
 
 
+class MutationTraitBounds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min_value: float = Field(ge=0)
+    max_value: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "MutationTraitBounds":
+        if self.min_value > self.max_value:
+            raise ValueError("mutation trait min_value cannot exceed max_value")
+        return self
+
+
+def default_mutation_trait_bounds() -> Dict[MutableTrait, MutationTraitBounds]:
+    return {
+        "max_speed": MutationTraitBounds(min_value=10.0, max_value=240.0),
+        "vision_range": MutationTraitBounds(min_value=20.0, max_value=520.0),
+        "vision_angle_deg": MutationTraitBounds(min_value=20.0, max_value=360.0),
+        "basal_metabolism": MutationTraitBounds(min_value=0.0, max_value=6.0),
+        "movement_energy_cost": MutationTraitBounds(min_value=0.0, max_value=0.25),
+        "reproduction_cost": MutationTraitBounds(min_value=1.0, max_value=100.0),
+        "attack_range": MutationTraitBounds(min_value=0.0, max_value=90.0),
+        "food_energy_gain": MutationTraitBounds(min_value=1.0, max_value=220.0),
+    }
+
+
 class MutationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -203,21 +251,16 @@ class MutationConfig(BaseModel):
     strength: float = Field(default=0.08, ge=0, le=1)
     min_trait_multiplier: float = Field(default=0.5, gt=0)
     max_trait_multiplier: float = Field(default=1.5, gt=0)
-    mutable_traits: List[str] = Field(
-        default_factory=lambda: [
-            "max_speed",
-            "vision_range",
-            "vision_angle_deg",
-            "basal_metabolism",
-            "movement_energy_cost",
-            "food_energy_gain",
-        ]
-    )
+    mutable_traits: List[MutableTrait] = Field(default_factory=lambda: list(DEFAULT_MUTABLE_TRAITS))
+    trait_bounds: Dict[MutableTrait, MutationTraitBounds] = Field(default_factory=default_mutation_trait_bounds)
 
     @model_validator(mode="after")
     def validate_trait_bounds(self) -> "MutationConfig":
         if self.min_trait_multiplier > self.max_trait_multiplier:
             raise ValueError("min_trait_multiplier cannot exceed max_trait_multiplier")
+        missing_bounds = sorted(set(self.mutable_traits) - set(self.trait_bounds))
+        if missing_bounds:
+            raise ValueError("missing mutation trait bounds for: %s" % ", ".join(missing_bounds))
         return self
 
 
