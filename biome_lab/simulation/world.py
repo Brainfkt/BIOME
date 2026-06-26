@@ -188,6 +188,49 @@ class World:
     def refresh_indices(self) -> None:
         self._refresh_indices()
 
+    def set_system_enabled(self, system: str, enabled: bool, preferred_id: Optional[int] = None) -> None:
+        if system == "topology":
+            self.config.topology.enabled = enabled
+        elif system == "seasons":
+            self.config.seasons.enabled = enabled
+        elif system == "disease":
+            self.config.disease.enabled = enabled
+            if enabled:
+                self.seed_infections(max(1, self.config.disease.initial_infected), preferred_id=preferred_id)
+        elif system == "mutation":
+            self.config.mutation.enabled = enabled
+        else:
+            raise ValueError("unknown configurable system: %s" % system)
+
+    def seed_infections(self, count: int = 1, preferred_id: Optional[int] = None) -> int:
+        if count <= 0:
+            return 0
+        susceptible = [
+            creature
+            for creature in self.iter_living_creatures()
+            if creature.disease_state == "susceptible"
+        ]
+        if not susceptible:
+            return 0
+        infected = 0
+        if preferred_id is not None:
+            preferred = next((creature for creature in susceptible if creature.id == preferred_id), None)
+            if preferred is not None:
+                preferred.disease_state = "infected"
+                preferred.infection_timer = 0.0
+                susceptible.remove(preferred)
+                infected += 1
+        remaining = max(0, count - infected)
+        if remaining > 0 and susceptible:
+            take = min(remaining, len(susceptible))
+            indices = self.rng.choice(len(susceptible), size=take, replace=False)
+            for index in np.atleast_1d(indices):
+                creature = susceptible[int(index)]
+                creature.disease_state = "infected"
+                creature.infection_timer = 0.0
+                infected += 1
+        return infected
+
     def add_obstacle_rect(
         self,
         center: np.ndarray,
@@ -370,15 +413,7 @@ class World:
         disease = self.config.disease
         if not disease.enabled or disease.initial_infected <= 0:
             return
-        living = list(self.iter_living_creatures())
-        if not living:
-            return
-        count = min(disease.initial_infected, len(living))
-        indices = self.rng.choice(len(living), size=count, replace=False)
-        for index in np.atleast_1d(indices):
-            creature = living[int(index)]
-            creature.disease_state = "infected"
-            creature.infection_timer = 0.0
+        self.seed_infections(disease.initial_infected)
 
     def _update_disease(self, dt: float) -> List[SimulationEvent]:
         disease = self.config.disease
