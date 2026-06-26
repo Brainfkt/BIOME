@@ -26,6 +26,7 @@ dist/
 
 # Runtime exports
 /exports/
+/PROJECT_CHECKLIST.md
 
 # Local editor settings
 .idea/
