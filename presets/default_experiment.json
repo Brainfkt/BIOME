@@ -101,8 +101,44 @@
         "vision_angle_deg",
         "basal_metabolism",
         "movement_energy_cost",
+        "reproduction_cost",
+        "attack_range",
         "food_energy_gain"
-      ]
+      ],
+      "trait_bounds": {
+        "max_speed": {
+          "min_value": 10.0,
+          "max_value": 240.0
+        },
+        "vision_range": {
+          "min_value": 20.0,
+          "max_value": 520.0
+        },
+        "vision_angle_deg": {
+          "min_value": 20.0,
+          "max_value": 360.0
+        },
+        "basal_metabolism": {
+          "min_value": 0.0,
+          "max_value": 6.0
+        },
+        "movement_energy_cost": {
+          "min_value": 0.0,
+          "max_value": 0.25
+        },
+        "reproduction_cost": {
+          "min_value": 1.0,
+          "max_value": 100.0
+        },
+        "attack_range": {
+          "min_value": 0.0,
+          "max_value": 90.0
+        },
+        "food_energy_gain": {
+          "min_value": 1.0,
+          "max_value": 220.0
+        }
+      }
     },
     "herbivore_radius": 6.0,
     "predator_radius": 7.5,
