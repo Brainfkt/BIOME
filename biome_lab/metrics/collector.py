@@ -68,6 +68,13 @@ class MetricsCollector:
             "mean_mutation_count_predators": self._mean_attribute(predators, "mutation_count"),
             "season_index": float(getattr(world, "current_season_index", lambda: -1)()),
         }
+        if hasattr(world, "topology_summary"):
+            topology = world.topology_summary()
+            row["topology_enabled"] = topology["enabled"]
+            row["terrain_min_elevation"] = topology["min_elevation"]
+            row["terrain_max_elevation"] = topology["max_elevation"]
+            row["terrain_mean_elevation"] = topology["mean_elevation"]
+            row["terrain_roughness"] = topology["roughness"]
         row["population_variance_herbivores_window"] = self._population_variance(
             "population_herbivores",
             herbivore_count,

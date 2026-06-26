@@ -57,6 +57,11 @@ METRIC_DEFINITIONS: Dict[str, MetricDefinition] = {
         definition="Indice numerique de la phase saisonniere active, -1 si les saisons sont desactivees.",
         scientific_use="Relie les changements demographiques aux cycles environnementaux.",
     ),
+    "terrain_roughness": MetricDefinition(
+        name="Rugosite topographique",
+        definition="Ecart-type des elevations de la grille de terrain.",
+        scientific_use="Quantifie a quel point la carte contient relief, vallees, cretes ou transitions abruptes.",
+    ),
     "predation_rate": MetricDefinition(
         name="Taux de predation",
         definition="Nombre de predations par seconde simulee sur la fenetre recente.",
