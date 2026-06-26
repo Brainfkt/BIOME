@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
 import pygame
 
 from biome_lab.config.schemas import BiomeLabPreset
@@ -13,6 +16,7 @@ from biome_lab.simulation.engine import SimulationEngine
 from biome_lab.ui.controls import Button, ToggleButton
 from biome_lab.ui.inspector import draw_inspector
 from biome_lab.ui.panels import draw_death_chart_panel, draw_species_config, draw_stats_panel
+from biome_lab.ui.sandbox import TOOL_LABELS, TOPOLOGY_TOOLS, SandboxState, SandboxTool
 
 
 class BiomeLabApp:
@@ -31,6 +35,10 @@ class BiomeLabApp:
         self.show_states = True
         self.death_chart_mode = "species"
         self.selected_id: Optional[int] = None
+        self.sandbox = SandboxState()
+        self.camera_zoom = 1.0
+        self.camera_pan = np.zeros(2, dtype=float)
+        self._panning = False
         self.buttons: List[Button] = []
         self.export_message = ""
         self.running = True
@@ -47,7 +55,7 @@ class BiomeLabApp:
 
     def _layout(self) -> Dict[str, pygame.Rect]:
         width, height = self.screen.get_size()
-        controls_h = 78
+        controls_h = 116
         margin = 10
         left_w = 330
         right_w = 390
@@ -105,6 +113,25 @@ class BiomeLabApp:
         self.buttons.append(Button(pygame.Rect(x, y, 128, 36), death_label, self._toggle_death_chart_mode))
         x += 138
         self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "Export", self._export))
+        x += 104
+        self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "Save", self._save_sandbox_state))
+        x += 104
+        self.buttons.append(Button(pygame.Rect(x, y, 94, 36), "View", self._reset_camera))
+
+        y += 44
+        x = controls_rect.x + 12
+        for tool in SandboxTool:
+            label = TOOL_LABELS[tool]
+            width = max(76, len(label) * 10 + 24)
+            self.buttons.append(
+                ToggleButton(
+                    pygame.Rect(x, y, width, 30),
+                    label,
+                    lambda tool=tool: self.sandbox.active_tool == tool,
+                    lambda tool=tool: self._set_tool(tool),
+                )
+            )
+            x += width + 8
 
     def _handle_events(self, layout: Dict[str, pygame.Rect]) -> None:
         for event in pygame.event.get():
@@ -118,6 +145,39 @@ class BiomeLabApp:
                     self._reset()
                 elif event.key == pygame.K_m:
                     self._toggle_death_chart_mode()
+                elif event.key == pygame.K_ESCAPE:
+                    self._set_tool(SandboxTool.SELECT)
+                elif event.key == pygame.K_1:
+                    self._set_tool(SandboxTool.SELECT)
+                elif event.key == pygame.K_2:
+                    self._set_tool(SandboxTool.ADD_PLANT)
+                elif event.key == pygame.K_3:
+                    self._set_tool(SandboxTool.ADD_HERBIVORE)
+                elif event.key == pygame.K_4:
+                    self._set_tool(SandboxTool.ADD_PREDATOR)
+                elif event.key == pygame.K_5:
+                    self._set_tool(SandboxTool.ADD_OBSTACLE)
+                elif event.key == pygame.K_6:
+                    self._set_tool(SandboxTool.ERASE)
+                elif event.key == pygame.K_7:
+                    self._set_tool(SandboxTool.CARVE_VALLEY)
+                elif event.key == pygame.K_8:
+                    self._set_tool(SandboxTool.RAISE_RIDGE)
+                elif event.key == pygame.K_9:
+                    self._set_tool(SandboxTool.SMOOTH_TERRAIN)
+            if event.type == pygame.MOUSEWHEEL and layout["world"].collidepoint(pygame.mouse.get_pos()):
+                self._zoom_camera(event.y)
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (2, 3):
+                if layout["world"].collidepoint(event.pos):
+                    self._panning = True
+            if event.type == pygame.MOUSEBUTTONUP and event.button in (2, 3):
+                self._panning = False
+            if event.type == pygame.MOUSEMOTION and self._panning:
+                self.camera_pan += np.array(event.rel, dtype=float)
+            if event.type == pygame.MOUSEMOTION and not self._panning:
+                if layout["world"].collidepoint(event.pos) and event.buttons[0]:
+                    if self.sandbox.active_tool in TOPOLOGY_TOOLS:
+                        self._handle_world_click(event.pos, layout["world"])
             handled = False
             for button in self.buttons:
                 if button.handle_event(event):
@@ -125,11 +185,68 @@ class BiomeLabApp:
                     break
             if not handled and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if layout["world"].collidepoint(event.pos):
-                    self._select_at(event.pos, layout["world"])
+                    self._handle_world_click(event.pos, layout["world"])
+
+    def _handle_world_click(self, pos, world_rect: pygame.Rect) -> None:
+        world = self.engine.world
+        self.renderer.configure_view(
+            world_rect,
+            world.config.world_width,
+            world.config.world_height,
+            self.camera_zoom,
+            self.camera_pan,
+        )
+        world_pos = self.renderer.screen_to_world(pos)
+        tool = self.sandbox.active_tool
+        if tool == SandboxTool.SELECT:
+            self._select_at(pos, world_rect)
+        elif tool == SandboxTool.ADD_PLANT:
+            world.spawn_plant(world_pos)
+            world.refresh_indices()
+        elif tool == SandboxTool.ADD_HERBIVORE:
+            creature = world.spawn_creature("herbivore", world_pos, initial=True)
+            self.selected_id = creature.id
+            world.refresh_indices()
+        elif tool == SandboxTool.ADD_PREDATOR:
+            creature = world.spawn_creature("predator", world_pos, initial=True)
+            self.selected_id = creature.id
+            world.refresh_indices()
+        elif tool == SandboxTool.ADD_OBSTACLE:
+            world.add_obstacle_rect(
+                world_pos,
+                width=self.sandbox.obstacle_width,
+                height=self.sandbox.obstacle_height,
+            )
+        elif tool in TOPOLOGY_TOOLS:
+            world.apply_topology_brush(
+                world_pos,
+                radius=self.sandbox.topology_brush_radius,
+                strength=self.sandbox.topology_brush_strength,
+                mode=self._topology_mode(tool),
+            )
+        elif tool == SandboxTool.ERASE:
+            removed = world.remove_entity_at(world_pos, radius=max(16.0 / max(self.renderer.scale, 1e-8), 14.0))
+            if removed:
+                self.selected_id = None
+
+    def _topology_mode(self, tool: SandboxTool) -> str:
+        if tool == SandboxTool.CARVE_VALLEY:
+            return "valley"
+        if tool == SandboxTool.RAISE_RIDGE:
+            return "ridge"
+        if tool == SandboxTool.SMOOTH_TERRAIN:
+            return "smooth"
+        raise ValueError("tool is not a topology tool: %s" % tool)
 
     def _select_at(self, pos, world_rect: pygame.Rect) -> None:
         world = self.engine.world
-        self.renderer.configure_view(world_rect, world.config.world_width, world.config.world_height)
+        self.renderer.configure_view(
+            world_rect,
+            world.config.world_width,
+            world.config.world_height,
+            self.camera_zoom,
+            self.camera_pan,
+        )
         world_pos = self.renderer.screen_to_world(pos)
         creatures = world.living_creatures()
         if not creatures:
@@ -153,6 +270,17 @@ class BiomeLabApp:
     def _toggle_death_chart_mode(self) -> None:
         self.death_chart_mode = "cause" if self.death_chart_mode == "species" else "species"
 
+    def _set_tool(self, tool: SandboxTool) -> None:
+        self.sandbox.active_tool = tool
+
+    def _reset_camera(self) -> None:
+        self.camera_zoom = 1.0
+        self.camera_pan = np.zeros(2, dtype=float)
+
+    def _zoom_camera(self, wheel_delta: int) -> None:
+        factor = 1.12 if wheel_delta > 0 else 1.0 / 1.12
+        self.camera_zoom = float(np.clip(self.camera_zoom * factor, 0.35, 6.0))
+
     def _export(self) -> None:
         self.engine.metrics.sample(self.engine.world, force=True)
         try:
@@ -160,6 +288,18 @@ class BiomeLabApp:
             self.export_message = "Export: %s" % result.metrics_path.name
         except Exception as exc:
             self.export_message = "Export failed: %s" % exc
+
+    def _save_sandbox_state(self) -> None:
+        output_dir = Path("exports")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = output_dir / ("%s_sandbox_state.json" % stamp)
+        payload = {
+            "preset": self.engine.preset.model_dump(mode="json"),
+            "world": self.engine.world.to_state_dict(),
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.export_message = "Saved: %s" % path.name
 
     def _draw(self, layout: Dict[str, pygame.Rect]) -> None:
         self.screen.fill(colors.BACKGROUND)
@@ -170,6 +310,8 @@ class BiomeLabApp:
             self.show_vision,
             self.show_states,
             self.selected_id,
+            self.camera_zoom,
+            self.camera_pan,
         )
         draw_species_config(self.screen, layout["species"], self.font, self.small_font, self.engine.preset)
         selected = self.engine.world.find_creature(self.selected_id) if self.selected_id is not None else None
@@ -196,7 +338,13 @@ class BiomeLabApp:
             self.engine.speed_multiplier,
             self.engine.world.living_creature_count(),
         )
-        status = "%s  fps=%.0f" % (status, self.clock.get_fps())
+        status = "%s  tool=%s  topo=%s  zoom=%.2fx  fps=%.0f" % (
+            status,
+            TOOL_LABELS[self.sandbox.active_tool],
+            "on" if self.engine.world.topology_enabled() else "off",
+            self.camera_zoom,
+            self.clock.get_fps(),
+        )
         status_surf = self.small_font.render(status, True, colors.TEXT_MUTED)
         self.screen.blit(status_surf, (rect.right - status_surf.get_width() - 16, rect.y + 12))
         if self.export_message:

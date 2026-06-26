@@ -27,6 +27,9 @@ def draw_inspector(
     y = draw_key_value(surface, small_font, "Energie", "%.1f / %.1f" % (creature.energy, traits.max_energy), body.x, y, body.width)
     y = draw_key_value(surface, small_font, "Age", "%.1f / %.1f s" % (creature.age, traits.max_age), body.x, y, body.width)
     y = draw_key_value(surface, small_font, "Comportement", creature.behavior.value, body.x, y, body.width)
+    y = draw_key_value(surface, small_font, "Sante", creature.disease_state, body.x, y, body.width)
+    y = draw_key_value(surface, small_font, "Generation", creature.generation, body.x, y, body.width)
+    y = draw_key_value(surface, small_font, "Mutations", creature.mutation_count, body.x, y, body.width)
     y = draw_key_value(surface, small_font, "Cooldown repro", "%.1f s" % creature.reproduction_cooldown_remaining, body.x, y, body.width)
     y += 8
     card = traits.science_card
@@ -46,4 +49,3 @@ def draw_inspector(
         y += small_font.get_height() + 2
         y = draw_wrapped(surface, text, small_font, colors.TEXT_MUTED, body.x, y, body.width)
         y += 4
-

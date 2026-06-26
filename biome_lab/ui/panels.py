@@ -115,11 +115,18 @@ def draw_stats_panel(
         ("Energie herbivores", "%.1f" % latest.get("mean_energy_herbivores", 0.0)),
         ("Energie predateurs", "%.1f" % latest.get("mean_energy_predators", 0.0)),
         ("Predation/s", "%.3f" % latest.get("predation_rate_window", 0.0)),
+        ("Infection/s", "%.3f" % latest.get("infection_rate_window", 0.0)),
         ("Reproduction H/s", "%.3f" % latest.get("reproduction_rate_herbivores_window", 0.0)),
         ("Reproduction P/s", "%.3f" % latest.get("reproduction_rate_predators_window", 0.0)),
+        ("Infectes H", int(latest.get("infected_herbivores", 0.0))),
+        ("Infectes P", int(latest.get("infected_predators", 0.0))),
         ("Morts famine", int(latest.get("deaths_famine_total", 0.0))),
+        ("Morts maladie", int(latest.get("deaths_disease_total", 0.0))),
         ("Morts predation", int(latest.get("deaths_predation_total", 0.0))),
         ("Morts vieillesse", int(latest.get("deaths_old_age_total", 0.0))),
+        ("Saison index", int(latest.get("season_index", -1.0))),
+        ("Relief moyen", "%.2f" % latest.get("terrain_mean_elevation", 0.0)),
+        ("Rugosite", "%.3f" % latest.get("terrain_roughness", 0.0)),
     ]
     for key, value in rows:
         y = draw_key_value(surface, small_font, key, value, body.x, y, body.width)
@@ -150,6 +157,7 @@ def draw_death_chart_panel(
         rows = [
             ("Predation", raw_counts.get("predation", 0), colors.HUNTING),
             ("Famine", raw_counts.get("famine", 0), colors.FLEEING),
+            ("Maladie", raw_counts.get("disease", 0), colors.ACCENT),
             ("Vieillesse", raw_counts.get("old_age", 0), colors.TEXT_MUTED),
         ]
         definition = "Nombre cumule de morts par mecanisme ecologique."
