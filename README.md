@@ -143,7 +143,7 @@ Le mode headless produit un dossier horodate contenant:
 
 - `preset.json`: preset utilise.
 - `metrics.csv`: series temporelles avec repetition et seed.
-- `events.csv`: naissances, morts, predations, infections et guerisons.
+- `events.csv`: naissances, morts, predations, infections, guerisons et mutations heritees.
 - `summary.csv`: resume final par repetition.
 - `metadata.json`: contexte du run.
 
