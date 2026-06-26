@@ -56,6 +56,7 @@ def test_death_counts_support_chart_modes() -> None:
 
     assert collector.death_counts_by_species() == {"herbivore": 2, "predator": 1}
     assert collector.death_counts_by_cause() == {
+        "disease": 0,
         "famine": 1,
         "predation": 1,
         "old_age": 1,
