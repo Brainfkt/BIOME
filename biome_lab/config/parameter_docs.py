@@ -105,9 +105,9 @@ PARAMETER_DOCS: Dict[str, Dict[str, str]] = {
         "expected_effect": "Une transmission elevee penalise les populations denses et accelere les effondrements.",
     },
     "mutation": {
-        "definition": "Variation hereditaire aleatoire de certains traits au moment de la reproduction.",
+        "definition": "Variation hereditaire aleatoire et bornee de traits autorises au moment de la reproduction.",
         "role": "Modele une derive evolutive simplifiee sous contraintes ecologiques.",
-        "expected_effect": "Des mutations fortes augmentent la diversite mais peuvent destabiliser la population.",
+        "expected_effect": "Des mutations fortes augmentent la diversite mais peuvent destabiliser la population; les traits autorises sont vitesse, vision, couts metaboliques, cout reproductif, portee d'attaque et gain alimentaire.",
     },
 }
 
