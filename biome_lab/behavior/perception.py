@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import math
 from typing import Iterable, List
 
 import numpy as np
 
-from biome_lab.behavior.steering import EPSILON, normalize
+from biome_lab.behavior.steering import EPSILON_SQ, length_squared
 from biome_lab.entities.creatures import Creature
 
 
@@ -24,17 +25,16 @@ class PerceptionSystem:
     def is_visible(self, observer: Creature, target_position: np.ndarray) -> bool:
         assert observer.traits is not None
         delta = target_position - observer.position
-        distance = float(np.linalg.norm(delta))
-        if distance > observer.traits.vision_range:
+        distance_sq = length_squared(delta)
+        if distance_sq > observer.traits.vision_range * observer.traits.vision_range:
             return False
-        if distance < EPSILON:
+        if distance_sq < EPSILON_SQ:
             return True
         if observer.traits.vision_angle_deg >= 359.0:
             return True
-        direction = normalize(delta)
-        heading = normalize(observer.heading)
-        if float(np.linalg.norm(heading)) < EPSILON:
+        heading_sq = length_squared(observer.heading)
+        if heading_sq < EPSILON_SQ:
             return True
-        half_angle = np.deg2rad(observer.traits.vision_angle_deg / 2.0)
-        return float(np.dot(direction, heading)) >= float(np.cos(half_angle))
-
+        half_angle = math.radians(observer.traits.vision_angle_deg / 2.0)
+        threshold = math.cos(half_angle) * math.sqrt(distance_sq * heading_sq)
+        return float(np.dot(delta, observer.heading)) >= threshold

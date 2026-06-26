@@ -5,7 +5,7 @@ from typing import Iterable, List
 import numpy as np
 
 from biome_lab.behavior.decision import BehaviorDecision
-from biome_lab.behavior.steering import seek, wander
+from biome_lab.behavior.steering import distance_squared, seek, wander
 from biome_lab.entities.creatures import BehaviorState
 from biome_lab.entities.predators import Predator
 
@@ -20,9 +20,9 @@ class PredatorPolicy:
         assert predator.traits is not None
         prey: List[object] = list(visible_prey)
         if prey:
-            target = min(prey, key=predator.distance_to)
+            target = min(prey, key=lambda candidate: distance_squared(predator.position, getattr(candidate, "position")))
             close_distance = predator.traits.attack_range + predator.traits.max_speed
-            if predator.is_hungry() or predator.distance_to(target) <= close_distance:
+            if predator.is_hungry() or distance_squared(predator.position, getattr(target, "position")) <= close_distance * close_distance:
                 return BehaviorDecision(
                     state=BehaviorState.HUNTING,
                     desired_velocity=seek(predator.position, getattr(target, "position"), predator.traits.max_speed),
@@ -40,4 +40,3 @@ class PredatorPolicy:
             state=BehaviorState.EXPLORING,
             desired_velocity=wander(predator.heading, rng, predator.traits.max_speed),
         )
-

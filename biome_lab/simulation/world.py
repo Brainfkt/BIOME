@@ -9,7 +9,14 @@ from pydantic import ValidationError
 from biome_lab.behavior.herbivore_policy import HerbivorePolicy
 from biome_lab.behavior.perception import PerceptionSystem
 from biome_lab.behavior.predator_policy import PredatorPolicy
-from biome_lab.behavior.steering import EPSILON, clamp_magnitude, length, normalize
+from biome_lab.behavior.steering import (
+    EPSILON,
+    EPSILON_SQ,
+    clamp_magnitude,
+    distance_squared,
+    length_squared,
+    normalize_with_length,
+)
 from biome_lab.config.schemas import (
     BiomeLabPreset,
     CreatureState,
@@ -751,10 +758,10 @@ class World:
         new_position, velocity = self._apply_obstacles(old_position, new_position, velocity, creature.radius)
         creature.position = new_position
         creature.velocity = velocity
-        speed = length(velocity)
+        velocity_direction, speed = normalize_with_length(velocity)
         if speed > EPSILON:
-            creature.heading = normalize(velocity)
-        distance = float(np.linalg.norm(creature.position - old_position))
+            creature.heading = velocity_direction
+        distance = math.sqrt(distance_squared(creature.position, old_position))
         metabolism_multiplier = self._metabolism_multiplier_at(creature.position)
         movement_cost_multiplier = self._movement_cost_multiplier_at(creature.position)
         creature.energy -= creature.traits.basal_metabolism * metabolism_multiplier * dt
@@ -774,14 +781,17 @@ class World:
         assert creature.traits is not None
         max_speed = creature.traits.max_speed * self._speed_multiplier_at(creature.position)
         desired_velocity = clamp_magnitude(desired_velocity, max_speed)
-        desired_speed = length(desired_velocity)
+        desired_direction, desired_speed = normalize_with_length(desired_velocity)
         if desired_speed <= EPSILON:
             return np.zeros(2, dtype=float)
 
-        desired_direction = normalize(desired_velocity)
-        reference_velocity = creature.velocity if length(creature.velocity) > EPSILON else creature.heading
-        current_direction = normalize(reference_velocity)
-        if length(current_direction) <= EPSILON:
+        reference_velocity = (
+            creature.velocity
+            if length_squared(creature.velocity) > EPSILON_SQ
+            else creature.heading
+        )
+        current_direction, current_speed = normalize_with_length(reference_velocity)
+        if current_speed <= EPSILON:
             return desired_velocity
 
         max_turn = float(np.deg2rad(self.config.creature_turn_rate_deg)) * dt
@@ -804,7 +814,7 @@ class World:
             ],
             dtype=float,
         )
-        return normalize(steered_direction) * desired_speed
+        return steered_direction * desired_speed
 
     def _apply_bounds(
         self,
@@ -1035,7 +1045,7 @@ class World:
         living = [plant for plant in nearby if getattr(plant, "alive", False)]
         if not living:
             return None
-        plant = min(living, key=herbivore.distance_to)
+        plant = min(living, key=lambda candidate: distance_squared(herbivore.position, candidate.position))
         plant.alive = False
         gain = min(getattr(plant, "energy"), herbivore.traits.food_energy_gain)
         herbivore.energy += gain
@@ -1056,8 +1066,8 @@ class World:
         living = [prey for prey in candidates if getattr(prey, "alive", False)]
         if not living:
             return []
-        prey = min(living, key=predator.distance_to)
-        if predator.distance_to(prey) > radius:
+        prey = min(living, key=lambda candidate: distance_squared(predator.position, candidate.position))
+        if distance_squared(predator.position, prey.position) > radius * radius:
             return []
         events: List[SimulationEvent] = []
         death = self._kill_creature(prey, DeathCause.PREDATION, predator.id)

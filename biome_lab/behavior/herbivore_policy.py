@@ -5,7 +5,7 @@ from typing import Iterable, List
 import numpy as np
 
 from biome_lab.behavior.decision import BehaviorDecision
-from biome_lab.behavior.steering import flee_from, seek, wander
+from biome_lab.behavior.steering import distance_squared, flee_from, seek, wander
 from biome_lab.entities.creatures import BehaviorState
 from biome_lab.entities.herbivores import Herbivore
 
@@ -19,10 +19,11 @@ class HerbivorePolicy:
         rng: np.random.Generator,
     ) -> BehaviorDecision:
         assert herbivore.traits is not None
+        flee_distance_sq = herbivore.traits.flee_distance * herbivore.traits.flee_distance
         threats = [
             predator
             for predator in visible_predators
-            if herbivore.distance_to(predator) <= herbivore.traits.flee_distance
+            if distance_squared(herbivore.position, getattr(predator, "position")) <= flee_distance_sq
         ]
         if threats:
             return BehaviorDecision(
@@ -33,7 +34,7 @@ class HerbivorePolicy:
 
         plants: List[object] = list(visible_plants)
         if herbivore.is_hungry() and plants:
-            target = min(plants, key=herbivore.distance_to)
+            target = min(plants, key=lambda plant: distance_squared(herbivore.position, getattr(plant, "position")))
             return BehaviorDecision(
                 state=BehaviorState.SEEKING_FOOD,
                 desired_velocity=seek(herbivore.position, getattr(target, "position"), herbivore.traits.max_speed),
@@ -51,4 +52,3 @@ class HerbivorePolicy:
             state=BehaviorState.EXPLORING,
             desired_velocity=wander(herbivore.heading, rng, herbivore.traits.max_speed),
         )
-

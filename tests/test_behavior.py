@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from biome_lab.behavior.herbivore_policy import HerbivorePolicy
+from biome_lab.behavior.perception import PerceptionSystem
 from biome_lab.behavior.predator_policy import PredatorPolicy
 from biome_lab.config.defaults import create_default_preset
 from biome_lab.entities.creatures import BehaviorState
@@ -10,6 +11,50 @@ from biome_lab.entities.herbivores import Herbivore
 from biome_lab.entities.plants import Plant
 from biome_lab.entities.predators import Predator
 from biome_lab.simulation.world import MAX_CREATURE_TURN_RATE, World
+
+
+def _observer(vision_range: float = 60.0, vision_angle_deg: float = 90.0) -> Herbivore:
+    preset = create_default_preset()
+    traits = preset.herbivore.model_copy(
+        update={
+            "vision_range": vision_range,
+            "vision_angle_deg": vision_angle_deg,
+        }
+    )
+    return Herbivore(
+        id=1,
+        position=np.array([100.0, 100.0]),
+        radius=6.0,
+        kind="herbivore",
+        traits=traits,
+        heading=np.array([1.0, 0.0], dtype=float),
+        energy=traits.max_energy,
+    )
+
+
+def test_perception_rejects_targets_outside_range() -> None:
+    observer = _observer(vision_range=30.0)
+
+    assert not PerceptionSystem().is_visible(observer, np.array([131.0, 100.0]))
+
+
+def test_perception_accepts_same_position_target() -> None:
+    observer = _observer()
+
+    assert PerceptionSystem().is_visible(observer, observer.position.copy())
+
+
+def test_perception_respects_vision_angle() -> None:
+    observer = _observer(vision_range=80.0, vision_angle_deg=60.0)
+
+    assert PerceptionSystem().is_visible(observer, np.array([140.0, 100.0]))
+    assert not PerceptionSystem().is_visible(observer, np.array([100.0, 140.0]))
+
+
+def test_perception_allows_omnidirectional_vision() -> None:
+    observer = _observer(vision_range=80.0, vision_angle_deg=360.0)
+
+    assert PerceptionSystem().is_visible(observer, np.array([60.0, 100.0]))
 
 
 def test_herbivore_fleeing_has_priority_over_food_and_reproduction() -> None:
