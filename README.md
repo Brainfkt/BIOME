@@ -55,6 +55,14 @@ Lancer une experience headless avec exports JSON/CSV:
 biome-lab run --preset presets/default_experiment.json --duration 300 --repetitions 5 --output-dir exports
 ```
 
+Pour les runs massifs ou les essais de performance, les evenements detailles peuvent etre desactives:
+
+```bash
+biome-lab run --preset presets/default_experiment.json --duration 300 --repetitions 5 --output-dir exports --no-events
+```
+
+Dans ce mode, `events.csv` garde ses en-tetes mais ne contient pas de lignes; les metriques basees sur les evenements sont marquees comme incompletes dans `metadata.json`.
+
 Le mode headless accepte aussi un `world_state` JSON. Dans ce cas, le run reprend depuis l'etat sauvegarde; `--duration` represente la duree simulee additionnelle.
 
 ## Controles
@@ -150,6 +158,18 @@ Le mode headless produit un dossier horodate contenant:
 Le bouton `Save` produit un fichier `*_sandbox_state.json` chargeable par `Load`, `L`, ou `biome-lab ui --preset`. Ce fichier est un `world_state`, pas un preset experimental minimal.
 
 Le dossier `exports/` est ignore par Git, car il contient des resultats de runs locaux. Si un resultat doit etre partage, copiez le fichier pertinent dans un dossier dedie et documentez le contexte de generation.
+
+## Benchmarks headless
+
+Le script `scripts/bench_headless.py` mesure la boucle headless sans importer Pygame:
+
+```bash
+.venv/bin/python scripts/bench_headless.py --scenario headless_1k --steps 100
+.venv/bin/python scripts/bench_headless.py --scenario all --steps 1 --output exports/benchmarks.json
+.venv/bin/python scripts/bench_headless.py --scenario headless_1k --steps 5 --profile /tmp/biome_profile.txt
+```
+
+Les scenarios disponibles sont `headless_1k`, `headless_5k` et `headless_10k`. La sortie JSON inclut le nombre de steps, les steps/s, le temps d'initialisation, le pic memoire et les populations finales.
 
 ## Tests
 
