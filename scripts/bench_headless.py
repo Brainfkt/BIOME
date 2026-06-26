@@ -20,6 +20,23 @@ SCENARIOS: Dict[str, int] = {
     "headless_5k": 5_000,
     "headless_10k": 10_000,
 }
+SCENARIO_TARGETS: Dict[str, Dict[str, float]] = {
+    "headless_1k": {
+        "steps_per_second": 1.0,
+        "peak_memory_mb": 64.0,
+        "update_seconds_per_step": 1.0,
+    },
+    "headless_5k": {
+        "steps_per_second": 0.25,
+        "peak_memory_mb": 256.0,
+        "update_seconds_per_step": 4.0,
+    },
+    "headless_10k": {
+        "steps_per_second": 0.15,
+        "peak_memory_mb": 512.0,
+        "update_seconds_per_step": 7.0,
+    },
+}
 
 
 def scenario_names(selected: str) -> List[str]:
@@ -125,6 +142,15 @@ def run_benchmark(args: argparse.Namespace, scenario: str) -> Tuple[Dict[str, ob
     update_seconds = time.perf_counter() - update_start
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+    steps_per_second = 0.0 if update_seconds <= 0.0 else round(args.steps / update_seconds, 3)
+    peak_memory_mb = round(peak_bytes / (1024 * 1024), 3)
+    targets = SCENARIO_TARGETS[scenario]
+    target_update_seconds = round(targets["update_seconds_per_step"] * args.steps, 6)
+    meets_targets = (
+        steps_per_second >= targets["steps_per_second"]
+        and peak_memory_mb <= targets["peak_memory_mb"]
+        and update_seconds <= target_update_seconds
+    )
 
     result = {
         "scenario": scenario,
@@ -140,8 +166,12 @@ def run_benchmark(args: argparse.Namespace, scenario: str) -> Tuple[Dict[str, ob
         "events": event_count,
         "setup_seconds": round(setup_seconds, 6),
         "update_seconds": round(update_seconds, 6),
-        "steps_per_second": 0.0 if update_seconds <= 0.0 else round(args.steps / update_seconds, 3),
-        "peak_memory_mb": round(peak_bytes / (1024 * 1024), 3),
+        "steps_per_second": steps_per_second,
+        "peak_memory_mb": peak_memory_mb,
+        "target_steps_per_second": targets["steps_per_second"],
+        "target_peak_memory_mb": targets["peak_memory_mb"],
+        "target_update_seconds": target_update_seconds,
+        "meets_targets": meets_targets,
     }
     profile_text = None if profile is None else _profile_report(profile, scenario, args.steps)
     return result, profile_text

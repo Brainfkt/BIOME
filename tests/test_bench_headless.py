@@ -49,5 +49,9 @@ def test_benchmark_subprocess_outputs_json_and_profile(tmp_path) -> None:
     assert benchmark["steps"] == 1
     assert benchmark["warmup_steps"] == 1
     assert benchmark["steps_per_second"] > 0
+    assert benchmark["target_steps_per_second"] > 0
+    assert benchmark["target_peak_memory_mb"] > 0
+    assert benchmark["target_update_seconds"] > 0
+    assert isinstance(benchmark["meets_targets"], bool)
     assert profile_path.exists()
     assert "Biome Lab profile: headless_1k" in profile_path.read_text(encoding="utf-8")
