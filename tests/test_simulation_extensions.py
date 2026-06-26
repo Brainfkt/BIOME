@@ -97,3 +97,27 @@ def test_enabled_season_reports_active_phase() -> None:
     assert world.current_season_index() == 0
     assert world.current_season_name() == "printemps"
 
+
+def test_topology_feature_can_generate_a_valley() -> None:
+    preset = _preset_with_updates(lambda data: data["simulation"]["topology"].update({"enabled": True}))
+    world = World(preset)
+
+    valley_center = np.array([560.0, 380.0])
+
+    assert world.topology_enabled()
+    assert world.sample_elevation(valley_center) < preset.simulation.topology.base_elevation
+
+
+def test_sandbox_topology_brush_carves_and_exports_relief() -> None:
+    world = World(create_default_preset())
+    center = np.array([280.0, 220.0])
+    before = world.sample_elevation(center)
+
+    world.apply_topology_brush(center, radius=80.0, strength=0.2, mode="valley")
+    after = world.sample_elevation(center)
+    state = world.to_state_dict()
+
+    assert world.topology_enabled()
+    assert after < before
+    assert "topology" in state
+    assert state["topology"]["summary"]["min_elevation"] <= after
