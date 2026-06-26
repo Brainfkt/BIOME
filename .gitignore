@@ -1,0 +1,36 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Packaging and build outputs
+build/
+dist/
+*.egg-info/
+
+# Runtime exports
+/exports/
+
+# Local editor settings
+.idea/
+.vscode/
+
+# Local automation metadata
+.codex/
+.agents/
