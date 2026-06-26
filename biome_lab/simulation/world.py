@@ -302,6 +302,7 @@ class World:
             "obstacles": [obstacle.model_dump() for obstacle in self.obstacles],
             "zones": [zone.model_dump() for zone in self.zones],
             "topology": {
+                "palette": self.config.topology.palette,
                 "summary": self.topology_summary(),
                 "grid": np.round(self.topology_grid, 4).tolist(),
             },

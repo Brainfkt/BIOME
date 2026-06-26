@@ -61,11 +61,18 @@ biome-lab run --preset presets/default_experiment.json --duration 300 --repetiti
 - `Save`: sauvegarde un etat sandbox JSON dans `exports/`.
 - `View`: recentre la camera.
 - Outils sandbox: `Select`, `Plant`, `Herb`, `Pred`, `Obstacle`, `Valley`, `Ridge`, `Smooth`, `Erase`.
+- Reglages sandbox: `Topo`, `Seasons`, `Disease`, `Mutation` activent ou desactivent les systemes experimentaux.
+- `Palette`: alterne les palettes de terrain (`natural`, `hydrology`, `arid`, `grayscale`).
 - `Espace`: lance ou suspend la simulation.
 - `R`: relance la simulation.
 - `M`: alterne le graphique de mortalite.
 - `1` a `9`: selection rapide des outils sandbox.
 - Avec `Valley`, `Ridge` ou `Smooth`, clic gauche et glisser peint directement le relief.
+- `T`: active ou desactive la topologie.
+- `N`: active ou desactive les saisons.
+- `D`: active ou desactive les maladies; si possible, une creature est infectee pour demarrer la dynamique.
+- `U`: active ou desactive les mutations.
+- `P`: change la palette du terrain.
 - Molette: zoom.
 - Clic droit ou clic molette + glisser: deplacement de camera.
 - Clic gauche sur une creature: affiche son etat interne et sa fiche scientifique.
@@ -100,6 +107,7 @@ Les parametres principaux sont:
 - `reproduction_threshold`, `reproduction_cost` et `reproduction_cooldown`: contraintes de reproduction.
 - `flee_distance`, `attack_range` et `food_energy_gain`: regles propres aux interactions predateur-proie.
 - `topology`: grille d'elevation permettant de creer vallees, cretes, collines et bassins; les pentes augmentent le cout de deplacement.
+- `topology.palette`: palette visuelle du relief, sans effet direct sur la dynamique.
 
 Les seeds sont fixees dans les presets pour rendre les runs comparables.
 

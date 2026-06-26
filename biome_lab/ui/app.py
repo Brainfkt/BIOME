@@ -55,7 +55,7 @@ class BiomeLabApp:
 
     def _layout(self) -> Dict[str, pygame.Rect]:
         width, height = self.screen.get_size()
-        controls_h = 116
+        controls_h = 154
         margin = 10
         left_w = 330
         right_w = 390
@@ -133,6 +133,27 @@ class BiomeLabApp:
             )
             x += width + 8
 
+        y += 36
+        x = controls_rect.x + 12
+        setting_specs = [
+            ("Topo", "topology", 82),
+            ("Seasons", "seasons", 96),
+            ("Disease", "disease", 96),
+            ("Mutation", "mutation", 104),
+        ]
+        for label, system, width in setting_specs:
+            self.buttons.append(
+                ToggleButton(
+                    pygame.Rect(x, y, width, 28),
+                    label,
+                    lambda system=system: self._system_enabled(system),
+                    lambda system=system: self._toggle_system(system),
+                )
+            )
+            x += width + 8
+        palette_label = "Palette: %s" % self.engine.world.config.topology.palette
+        self.buttons.append(Button(pygame.Rect(x, y, 150, 28), palette_label, self._cycle_terrain_palette))
+
     def _handle_events(self, layout: Dict[str, pygame.Rect]) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -165,6 +186,16 @@ class BiomeLabApp:
                     self._set_tool(SandboxTool.RAISE_RIDGE)
                 elif event.key == pygame.K_9:
                     self._set_tool(SandboxTool.SMOOTH_TERRAIN)
+                elif event.key == pygame.K_t:
+                    self._toggle_system("topology")
+                elif event.key == pygame.K_n:
+                    self._toggle_system("seasons")
+                elif event.key == pygame.K_d:
+                    self._toggle_system("disease")
+                elif event.key == pygame.K_u:
+                    self._toggle_system("mutation")
+                elif event.key == pygame.K_p:
+                    self._cycle_terrain_palette()
             if event.type == pygame.MOUSEWHEEL and layout["world"].collidepoint(pygame.mouse.get_pos()):
                 self._zoom_camera(event.y)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button in (2, 3):
@@ -273,6 +304,31 @@ class BiomeLabApp:
     def _set_tool(self, tool: SandboxTool) -> None:
         self.sandbox.active_tool = tool
 
+    def _system_enabled(self, system: str) -> bool:
+        config = self.engine.world.config
+        if system == "topology":
+            return config.topology.enabled
+        if system == "seasons":
+            return config.seasons.enabled
+        if system == "disease":
+            return config.disease.enabled
+        if system == "mutation":
+            return config.mutation.enabled
+        return False
+
+    def _toggle_system(self, system: str) -> None:
+        enabled = not self._system_enabled(system)
+        preferred_id = self.selected_id if system == "disease" else None
+        self.engine.world.set_system_enabled(system, enabled, preferred_id=preferred_id)
+        self.export_message = "%s: %s" % (system, "on" if enabled else "off")
+
+    def _cycle_terrain_palette(self) -> None:
+        palettes = list(colors.TERRAIN_PALETTES)
+        current = self.engine.world.config.topology.palette
+        index = palettes.index(current) if current in palettes else 0
+        self.engine.world.config.topology.palette = palettes[(index + 1) % len(palettes)]
+        self.export_message = "Palette: %s" % self.engine.world.config.topology.palette
+
     def _reset_camera(self) -> None:
         self.camera_zoom = 1.0
         self.camera_pan = np.zeros(2, dtype=float)
@@ -338,10 +394,11 @@ class BiomeLabApp:
             self.engine.speed_multiplier,
             self.engine.world.living_creature_count(),
         )
-        status = "%s  tool=%s  topo=%s  zoom=%.2fx  fps=%.0f" % (
+        status = "%s  tool=%s  topo=%s  pal=%s  zoom=%.2fx  fps=%.0f" % (
             status,
             TOOL_LABELS[self.sandbox.active_tool],
             "on" if self.engine.world.topology_enabled() else "off",
+            self.engine.world.config.topology.palette,
             self.camera_zoom,
             self.clock.get_fps(),
         )
