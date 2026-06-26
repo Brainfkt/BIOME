@@ -17,14 +17,18 @@ class HerbivorePolicy:
         visible_predators: Iterable[object],
         visible_plants: Iterable[object],
         rng: np.random.Generator,
+        predators_in_flee_range: bool = False,
     ) -> BehaviorDecision:
         assert herbivore.traits is not None
-        flee_distance_sq = herbivore.traits.flee_distance * herbivore.traits.flee_distance
-        threats = [
-            predator
-            for predator in visible_predators
-            if distance_squared(herbivore.position, predator.position) <= flee_distance_sq
-        ]
+        if predators_in_flee_range:
+            threats = visible_predators
+        else:
+            flee_distance_sq = herbivore.traits.flee_distance * herbivore.traits.flee_distance
+            threats = [
+                predator
+                for predator in visible_predators
+                if distance_squared(herbivore.position, predator.position) <= flee_distance_sq
+            ]
         if threats:
             return BehaviorDecision(
                 state=BehaviorState.FLEEING,

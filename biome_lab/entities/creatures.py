@@ -81,7 +81,10 @@ class Creature(Entity):
 
     def clamp_energy(self) -> None:
         assert self.traits is not None
-        self.energy = float(np.clip(self.energy, 0.0, self.traits.max_energy))
+        if self.energy < 0.0:
+            self.energy = 0.0
+        elif self.energy > self.traits.max_energy:
+            self.energy = self.traits.max_energy
 
     def register_behavior_time(self, dt: float) -> None:
         key = self.behavior.value

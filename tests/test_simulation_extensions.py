@@ -5,7 +5,8 @@ import pytest
 
 from biome_lab.config.defaults import create_default_preset
 from biome_lab.config.schemas import BiomeLabPreset, DiseaseState, ObstacleConfig
-from biome_lab.simulation.events import EventKind
+from biome_lab.simulation.engine import SimulationEngine
+from biome_lab.simulation.events import DeathCause, EventKind
 from biome_lab.simulation.world import World
 
 
@@ -47,6 +48,52 @@ def test_disease_transmits_by_proximity_when_enabled() -> None:
 
     assert target.disease_state == DiseaseState.INFECTED
     assert any(event.kind.value == "infection" for event in events)
+
+
+def test_living_creature_count_tracks_spawns_deaths_and_loads() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "initial_herbivores": 0,
+                "initial_predators": 0,
+                "plant": {
+                    **data["simulation"]["plant"],
+                    "initial_count": 0,
+                },
+            }
+        )
+    )
+    world = World(preset)
+    first = world.spawn_creature("herbivore", np.array([100.0, 100.0]), initial=True)
+    second = world.spawn_creature("predator", np.array([160.0, 100.0]), initial=True)
+
+    assert first is not None
+    assert second is not None
+    assert world.living_creature_count() == 2
+
+    world._kill_creature(first, DeathCause.FAMINE)
+    assert world.living_creature_count() == 1
+    world._remove_dead()
+    assert world.creature_counts() == {"herbivore": 0, "predator": 1}
+
+    loaded = World.from_world_state(world.to_world_state())
+    assert loaded.living_creature_count() == 1
+
+
+def test_ui_engine_keeps_full_metrics_for_large_presets() -> None:
+    preset = _preset_with_updates(
+        lambda data: data["simulation"].update(
+            {
+                "initial_herbivores": 0,
+                "initial_predators": 0,
+                "max_creatures": 2500,
+            }
+        )
+    )
+
+    engine = SimulationEngine(preset)
+
+    assert engine.metrics.mode == "full"
 
 
 def test_disease_state_transitions_are_strict() -> None:

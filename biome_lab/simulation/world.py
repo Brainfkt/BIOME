@@ -40,6 +40,7 @@ from biome_lab.simulation.spatial_index import SpatialIndex
 
 MAX_CREATURE_TURN_RATE = float(np.deg2rad(220.0))
 SPATIAL_INDEX_CELL_SIZE = 64.0
+DIRECT_PREDATOR_SCAN_LIMIT = 64
 MutationChange = Tuple[MutableTrait, float, float]
 
 
@@ -59,6 +60,9 @@ class World:
         self.topology_grid = self._build_topology_grid()
         self.events: List[SimulationEvent] = []
         self.last_spawn_error: Optional[str] = None
+        self._living_creature_count = 0
+        self._creatures_dirty = False
+        self._plants_dirty = False
         self.perception = PerceptionSystem()
         self.herbivore_policy = HerbivorePolicy()
         self.predator_policy = PredatorPolicy()
@@ -86,6 +90,9 @@ class World:
         self.plants = []
         self.herbivores = []
         self.predators = []
+        self._living_creature_count = 0
+        self._creatures_dirty = False
+        self._plants_dirty = False
         self.obstacles = list(self.config.environment.obstacles)
         self.zones = list(self.config.environment.zones)
         self.topology_grid = self._build_topology_grid()
@@ -130,7 +137,7 @@ class World:
         return list(self.iter_living_creatures())
 
     def living_creature_count(self) -> int:
-        return sum(1 for creature in self.iter_creatures() if creature.alive)
+        return self._living_creature_count
 
     def creature_counts(self) -> Dict[str, int]:
         return {
@@ -274,6 +281,9 @@ class World:
         world.rng.bit_generator.state = state.rng_state
         world.events = []
         world.last_spawn_error = None
+        world._sync_living_creature_count()
+        world._creatures_dirty = False
+        world._plants_dirty = False
         world._refresh_indices()
         return world
 
@@ -475,6 +485,11 @@ class World:
             nearest = min(candidates, key=lambda entity: entity.distance_to_position(position))
             if nearest.distance_to_position(position) <= radius:
                 nearest.alive = False
+                if isinstance(nearest, Creature):
+                    self._living_creature_count = max(0, self._living_creature_count - 1)
+                    self._creatures_dirty = True
+                else:
+                    self._plants_dirty = True
                 self._remove_dead()
                 self._refresh_indices()
                 return True
@@ -603,6 +618,7 @@ class World:
         else:
             creature = Predator(**kwargs)
             self.predators.append(creature)
+        self._living_creature_count += 1
         self.last_spawn_error = None
         return creature
 
@@ -724,17 +740,7 @@ class World:
     def _update_herbivore(self, herbivore: Herbivore, dt: float) -> List[SimulationEvent]:
         assert herbivore.traits is not None
         threat_range = min(herbivore.traits.vision_range, herbivore.traits.flee_distance)
-        predators = self.predator_index.query_radius_into(
-            herbivore.position,
-            threat_range,
-            self._nearby_predators_buffer,
-        )
-        visible_predators = self.perception.visible_entities_into(
-            herbivore,
-            predators,
-            self._visible_predators_buffer,
-            assume_in_range=True,
-        )
+        visible_predators = self._visible_predators_for_herbivore(herbivore, threat_range)
         if herbivore.is_hungry():
             plants = self.plant_index.query_radius_into(
                 herbivore.position,
@@ -750,7 +756,13 @@ class World:
         else:
             visible_plants = self._visible_plants_buffer
             visible_plants.clear()
-        decision = self.herbivore_policy.decide(herbivore, visible_predators, visible_plants, self.rng)
+        decision = self.herbivore_policy.decide(
+            herbivore,
+            visible_predators,
+            visible_plants,
+            self.rng,
+            predators_in_flee_range=True,
+        )
         herbivore.behavior = decision.state
         herbivore.target_id = decision.target_id
 
@@ -763,6 +775,38 @@ class World:
             if feeding_event is not None:
                 events.append(feeding_event)
         return events
+
+    def _visible_predators_for_herbivore(
+        self,
+        herbivore: Herbivore,
+        threat_range: float,
+    ) -> List[object]:
+        if len(self.predators) <= DIRECT_PREDATOR_SCAN_LIMIT:
+            predators = self._nearby_predators_buffer
+            predators.clear()
+            origin_x = float(herbivore.position[0])
+            origin_y = float(herbivore.position[1])
+            threat_range_sq = threat_range * threat_range
+            append = predators.append
+            for predator in self.predators:
+                if not predator.alive:
+                    continue
+                delta_x = float(predator.position[0]) - origin_x
+                delta_y = float(predator.position[1]) - origin_y
+                if delta_x * delta_x + delta_y * delta_y <= threat_range_sq:
+                    append(predator)
+        else:
+            predators = self.predator_index.query_radius_into(
+                herbivore.position,
+                threat_range,
+                self._nearby_predators_buffer,
+            )
+        return self.perception.visible_entities_into(
+            herbivore,
+            predators,
+            self._visible_predators_buffer,
+            assume_in_range=True,
+        )
 
     def _update_predator(self, predator: Predator, dt: float) -> List[SimulationEvent]:
         assert predator.traits is not None
@@ -801,25 +845,43 @@ class World:
             return []
         assert creature.traits is not None
         velocity = self._steer_velocity(creature, desired_velocity, dt)
-        old_position = creature.position
-        old_x = float(old_position[0])
-        old_y = float(old_position[1])
-        new_position = np.array(
-            [
-                old_x + float(velocity[0]) * dt,
-                old_y + float(velocity[1]) * dt,
-            ],
-            dtype=float,
-        )
-        new_position, velocity = self._apply_bounds(old_position, new_position, velocity, dt)
-        new_position, velocity = self._apply_obstacles(old_position, new_position, velocity, creature.radius)
-        creature.position = new_position
+        position = creature.position
+        old_x = float(position[0])
+        old_y = float(position[1])
+        velocity_x = float(velocity[0])
+        velocity_y = float(velocity[1])
+        new_x = old_x + velocity_x * dt
+        new_y = old_y + velocity_y * dt
+        width, height = self.config.world_width, self.config.world_height
+        if new_x < 0.0:
+            new_x = 0.0
+            velocity_x *= -self.config.boundary_bounce
+        elif new_x > width:
+            new_x = width
+            velocity_x *= -self.config.boundary_bounce
+        if new_y < 0.0:
+            new_y = 0.0
+            velocity_y *= -self.config.boundary_bounce
+        elif new_y > height:
+            new_y = height
+            velocity_y *= -self.config.boundary_bounce
+        if self._position_blocked_xy(new_x, new_y, creature.radius):
+            new_x = old_x
+            new_y = old_y
+            velocity_x = 0.0
+            velocity_y = 0.0
+        position[0] = new_x
+        position[1] = new_y
+        velocity[0] = velocity_x
+        velocity[1] = velocity_y
         creature.velocity = velocity
-        velocity_direction, speed = normalize_with_length(velocity)
-        if speed > EPSILON:
-            creature.heading = velocity_direction
-        movement_x = float(creature.position[0]) - old_x
-        movement_y = float(creature.position[1]) - old_y
+        speed_sq = velocity_x * velocity_x + velocity_y * velocity_y
+        if speed_sq > EPSILON_SQ:
+            speed = math.sqrt(speed_sq)
+            creature.heading[0] = velocity_x / speed
+            creature.heading[1] = velocity_y / speed
+        movement_x = new_x - old_x
+        movement_y = new_y - old_y
         distance = math.sqrt(movement_x * movement_x + movement_y * movement_y)
         metabolism_multiplier = self._metabolism_multiplier_at(creature.position)
         movement_cost_multiplier = self._movement_cost_multiplier_at(creature.position)
@@ -933,8 +995,11 @@ class World:
         )
 
     def _position_blocked(self, position: np.ndarray, radius: float) -> bool:
+        return self._position_blocked_xy(float(position[0]), float(position[1]), radius)
+
+    def _position_blocked_xy(self, x: float, y: float, radius: float) -> bool:
         for obstacle in self.obstacles:
-            if obstacle.blocks_movement and self._circle_intersects_rect(position, radius, obstacle):
+            if obstacle.blocks_movement and self._circle_intersects_rect_xy(x, y, radius, obstacle):
                 return True
         return False
 
@@ -945,10 +1010,13 @@ class World:
         )
 
     def _circle_intersects_rect(self, position: np.ndarray, radius: float, rect) -> bool:
-        nearest_x = float(np.clip(position[0], rect.x, rect.x + rect.width))
-        nearest_y = float(np.clip(position[1], rect.y, rect.y + rect.height))
-        delta_x = float(position[0]) - nearest_x
-        delta_y = float(position[1]) - nearest_y
+        return self._circle_intersects_rect_xy(float(position[0]), float(position[1]), radius, rect)
+
+    def _circle_intersects_rect_xy(self, x: float, y: float, radius: float, rect) -> bool:
+        nearest_x = min(max(x, rect.x), rect.x + rect.width)
+        nearest_y = min(max(y, rect.y), rect.y + rect.height)
+        delta_x = x - nearest_x
+        delta_y = y - nearest_y
         return delta_x * delta_x + delta_y * delta_y <= radius * radius
 
     def _zone_at(self, position: np.ndarray):
@@ -1125,6 +1193,7 @@ class World:
         if plant is None:
             return None
         plant.alive = False
+        self._plants_dirty = True
         gain = min(getattr(plant, "energy"), herbivore.traits.food_energy_gain)
         herbivore.energy += gain
         herbivore.clamp_energy()
@@ -1247,6 +1316,8 @@ class World:
         if not creature.alive:
             return None
         creature.mark_dead(cause)
+        self._living_creature_count = max(0, self._living_creature_count - 1)
+        self._creatures_dirty = True
         return SimulationEvent(
             time=self.time,
             kind=EventKind.DEATH,
@@ -1293,6 +1364,14 @@ class World:
             self.predator_index.rebuild(self.predators)
 
     def _remove_dead(self) -> None:
-        self.plants = [plant for plant in self.plants if plant.alive]
-        self.herbivores = [herbivore for herbivore in self.herbivores if herbivore.alive]
-        self.predators = [predator for predator in self.predators if predator.alive]
+        if self._plants_dirty:
+            self.plants = [plant for plant in self.plants if plant.alive]
+            self._plants_dirty = False
+        if self._creatures_dirty:
+            self.herbivores = [herbivore for herbivore in self.herbivores if herbivore.alive]
+            self.predators = [predator for predator in self.predators if predator.alive]
+            self._sync_living_creature_count()
+            self._creatures_dirty = False
+
+    def _sync_living_creature_count(self) -> None:
+        self._living_creature_count = sum(1 for creature in self.iter_creatures() if creature.alive)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -44,8 +45,10 @@ class Renderer:
         ) + pan_offset
 
     def world_to_screen(self, position: np.ndarray) -> Tuple[int, int]:
-        point = self.offset + position * self.scale
-        return int(point[0]), int(point[1])
+        return self._world_xy_to_screen(float(position[0]), float(position[1]))
+
+    def _world_xy_to_screen(self, x: float, y: float) -> Tuple[int, int]:
+        return int(self.offset[0] + x * self.scale), int(self.offset[1] + y * self.scale)
 
     def screen_to_world(self, position: Tuple[int, int]) -> np.ndarray:
         point = (np.array(position, dtype=float) - self.offset) / max(self.scale, 1e-8)
@@ -169,7 +172,10 @@ class Renderer:
         for plant in world.plants:
             if not plant.alive:
                 continue
-            pygame.draw.circle(surface, colors.PLANT, self.world_to_screen(plant.position), radius)
+            center = self._world_xy_to_screen(float(plant.position[0]), float(plant.position[1]))
+            if not self.world_rect.collidepoint(center):
+                continue
+            pygame.draw.circle(surface, colors.PLANT, center, radius)
 
     def _draw_creatures(
         self,
@@ -183,7 +189,9 @@ class Renderer:
         for creature in creatures:
             if not creature.alive or creature.traits is None:
                 continue
-            center = self.world_to_screen(creature.position)
+            center = self._world_xy_to_screen(float(creature.position[0]), float(creature.position[1]))
+            if not self.world_rect.collidepoint(center):
+                continue
             radius = max(5, int(creature.radius * self.scale))
             self._draw_oriented_triangle(surface, creature, center, radius)
             if selected_id == creature.id:
@@ -212,15 +220,32 @@ class Renderer:
         radius: int,
     ) -> None:
         heading = creature.heading
-        if float(np.linalg.norm(heading)) < 1e-8:
-            heading = np.array([1.0, 0.0], dtype=float)
-        heading = heading / max(float(np.linalg.norm(heading)), 1e-8)
-        perpendicular = np.array([-heading[1], heading[0]])
-        center_vec = np.array(center, dtype=float)
-        nose = center_vec + heading * radius * 1.8
-        left = center_vec - heading * radius * 0.9 + perpendicular * radius
-        right = center_vec - heading * radius * 0.9 - perpendicular * radius
-        points = [(int(nose[0]), int(nose[1])), (int(left[0]), int(left[1])), (int(right[0]), int(right[1]))]
+        heading_x = float(heading[0])
+        heading_y = float(heading[1])
+        heading_length = math.sqrt(heading_x * heading_x + heading_y * heading_y)
+        if heading_length < 1e-8:
+            heading_x = 1.0
+            heading_y = 0.0
+        else:
+            heading_x /= heading_length
+            heading_y /= heading_length
+        perpendicular_x = -heading_y
+        perpendicular_y = heading_x
+        center_x = float(center[0])
+        center_y = float(center[1])
+        nose = (
+            int(center_x + heading_x * radius * 1.8),
+            int(center_y + heading_y * radius * 1.8),
+        )
+        left = (
+            int(center_x - heading_x * radius * 0.9 + perpendicular_x * radius),
+            int(center_y - heading_y * radius * 0.9 + perpendicular_y * radius),
+        )
+        right = (
+            int(center_x - heading_x * radius * 0.9 - perpendicular_x * radius),
+            int(center_y - heading_y * radius * 0.9 - perpendicular_y * radius),
+        )
+        points = [nose, left, right]
         pygame.draw.polygon(surface, creature.traits.color, points)
         pygame.draw.polygon(surface, (12, 18, 19), points, 1)
 
