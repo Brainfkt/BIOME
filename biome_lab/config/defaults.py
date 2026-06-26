@@ -6,12 +6,14 @@ from biome_lab.config.schemas import (
     DiseaseConfig,
     EnvironmentConfig,
     ExperimentProtocol,
+    MapTopologyConfig,
     MutationConfig,
     PlantConfig,
     ScientificCard,
     SeasonConfig,
     SeasonPhaseConfig,
     SimulationConfig,
+    TopologyFeatureConfig,
 )
 
 
@@ -134,6 +136,25 @@ def create_default_preset() -> BiomeLabPreset:
             regrowth_per_second=2.0,
         ),
         environment=EnvironmentConfig(),
+        topology=MapTopologyConfig(
+            enabled=False,
+            grid_columns=80,
+            grid_rows=54,
+            base_elevation=0.5,
+            movement_cost_per_slope=0.75,
+            features=[
+                TopologyFeatureConfig(
+                    name="vallee_centrale",
+                    kind="valley",
+                    x=560.0,
+                    y=380.0,
+                    length=820.0,
+                    width=95.0,
+                    strength=0.28,
+                    orientation_deg=-12.0,
+                )
+            ],
+        ),
         seasons=SeasonConfig(
             enabled=False,
             cycle_seconds=180.0,

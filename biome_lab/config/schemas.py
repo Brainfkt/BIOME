@@ -128,6 +128,30 @@ class EnvironmentConfig(BaseModel):
     zones: List[EnvironmentZoneConfig] = Field(default_factory=list)
 
 
+class TopologyFeatureConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = "topology_feature"
+    kind: Literal["valley", "ridge", "hill", "basin"]
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    length: float = Field(gt=0)
+    width: float = Field(gt=0)
+    strength: float = Field(gt=0, le=1)
+    orientation_deg: float = 0.0
+
+
+class MapTopologyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    grid_columns: int = Field(default=80, ge=8, le=512)
+    grid_rows: int = Field(default=54, ge=8, le=512)
+    base_elevation: float = Field(default=0.5, ge=0, le=1)
+    movement_cost_per_slope: float = Field(default=0.75, ge=0)
+    features: List[TopologyFeatureConfig] = Field(default_factory=list)
+
+
 class SeasonPhaseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -207,6 +231,7 @@ class SimulationConfig(BaseModel):
     seed: int
     plant: PlantConfig
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
+    topology: MapTopologyConfig = Field(default_factory=MapTopologyConfig)
     seasons: SeasonConfig = Field(default_factory=SeasonConfig)
     disease: DiseaseConfig = Field(default_factory=DiseaseConfig)
     mutation: MutationConfig = Field(default_factory=MutationConfig)

@@ -84,6 +84,11 @@ PARAMETER_DOCS: Dict[str, Dict[str, str]] = {
         "role": "Ajoute une structure spatiale au monde et perturbe les lignes de poursuite.",
         "expected_effect": "Les obstacles reduisent certaines rencontres et peuvent creer des refuges.",
     },
+    "topology": {
+        "definition": "Grille d'elevation continue de 0 a 1 pouvant representer vallees, cretes, collines et bassins.",
+        "role": "Ajoute une structure topographique modifiable dans le sandbox.",
+        "expected_effect": "Une carte plus rugueuse augmente les couts de deplacement sur les pentes et canalise les trajectoires.",
+    },
     "seasons": {
         "definition": "Cycle temporel modifiant repousse, metabolisme, cout de mouvement et transmission.",
         "role": "Introduit une contrainte periodique sur l'ecosysteme.",
